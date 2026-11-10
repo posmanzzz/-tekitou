@@ -190,12 +190,16 @@ html,body,button,.card,.seat{touch-action:manipulation}
 .avpick{flex:none;width:52px;height:52px;padding:0;border-radius:12px;font-size:24px;background:rgba(0,0,0,.35);border:2px dashed rgba(255,255,255,.4);box-shadow:none;overflow:hidden}
 .avpick span{display:block;width:100%;height:100%;background-size:cover;background-position:center}
 .pl .nm{display:flex;align-items:center}
+
+.netbar{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:40;background:#c2410c;color:#fff;font-size:13px;font-weight:800;padding:6px 14px;border-radius:99px;box-shadow:0 3px 10px rgba(0,0,0,.4);animation:rib 1s ease-in-out infinite}
+.netbar[hidden]{display:none}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="fx"></div>
 <div class="toast" id="toast"></div>
+<div class="netbar" id="netbar" hidden></div>
 <div class="chat" id="chat" hidden><div class="inner">
   <div class="row"><b class="grow">💬 チャット</b><button class="small ghost" id="chatClose">閉じる</button></div>
   <div class="msgs" id="msgs"></div>
@@ -618,6 +622,13 @@ function applyAction(s, actor, a){
       if(s.host===actor){ const h=s.players.find(x=>!x.bot); if(h) s.host=h.id; }
       r=true; break;
     }
+    case "drop": {   // ホスト専用: 接続が死んでる人を片付ける
+      if(!host || a.id===s.host) break;
+      const p=s.players.find(x=>x.id===a.id); if(!p) break;
+      if(s.phase==="play" && s.order.includes(p.id)){ if(!p.away){ p.bot=true; p.away=true; log(s,`${p.name} の接続が切れた（CPUが代打ち）`); r=true; } }
+      else { s.players=s.players.filter(x=>x.id!==p.id); s.ranking=(s.ranking||[]).filter(x=>x!==p.id); r=true; }
+      break;
+    }
     case "addbot": if(host && s.phase!=="play") r=addBot(s); break;
     case "rm": if(host && s.phase!=="play" && a.id!==actor){ const n=s.players.length; s.players=s.players.filter(p=>p.id!==a.id); s.ranking=s.ranking.filter(x=>x!==a.id); r=s.players.length!==n; } break;
     case "tobot": if(host && s.phase==="play"){ const p=s.players.find(x=>x.id===a.id); if(p&&!p.bot){ p.bot=true; p.away=true; log(s,`${p.name} をCPUに交代`); r=true; } } break;
@@ -902,7 +913,7 @@ let lastGhost=null;
 const inArtifact = !!(window.claude && typeof window.claude.use==="function");
 let net=null, netChecked=false;          // "db" | "p2p" | null
 let db=null;
-let myId = sstore.get("dfg_id"); if(!myId){ myId="u"+rid()+rid(); sstore.set("dfg_id",myId); }
+let myId = store.get("dfg_uid") || sstore.get("dfg_id"); if(!myId){ myId="u"+rid()+rid(); } store.set("dfg_uid",myId); sstore.set("dfg_id",myId);
 
 let mode=null;       // "online" | "solo"
 let S=null, roomKey="", roomPath="", unsub=null, loadTimer=null;
@@ -931,7 +942,7 @@ const isHost = () => mode==="solo" || (S && S.host===myId);
 const lobbyish = a => ["join","leave","addbot","rm","rules","start","next","ready"].includes(a.t);
 
 function setState(s){ S=s; render(); driveBots(); }
-window.__dfgDebug = () => S; window.__dfgSet = s => setState(s);
+window.__dfgDebug = () => S; window.__dfgSet = s => setState(s); window.__dfgNet = {conn:()=>conn, peer:()=>peer, conns:()=>conns, host:()=>p2pHost};
 
 // 自分の操作
 async function act(a){
@@ -1037,10 +1048,25 @@ function mergeAvatars(m){
 function resetAvatars(){ for(const k in avatars) delete avatars[k]; if(myAvatar) avatars[myId]=myAvatar; if(avUnsub){ avUnsub(); avUnsub=null; } }
 
 // ---- P2P（自前ホスティング時） ----
-// 合言葉 → peer ID。まず「既にある部屋」につなぎに行き、無ければ自分がホストになる。
-let connStatus="", migrating=false, myName="", roomPeerId="", joinGen=0, clientTries=0;
-const PEER_OPTS = () => ({debug:0, ...(window.__DFG_PEER_OPTS__||{})});
+// 合言葉 → peer ID。まずホストを試し（成否が即返る）、部屋があればクライアントとして入る。
+// ・クライアントは4秒ごとにping、ホストは25秒無音の接続を切る（幽霊対策）
+// ・クライアントは切れたら自動で再接続（最大30秒）。この間は新しい部屋を作らない
+// ・ホストのシグナリングが切れてIDを取られたら、取った側（空の部屋）に状態ごと合流する
+const ICE_SERVERS = [
+  {urls:["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302","stun:stun2.l.google.com:19302"]},
+  {urls:"stun:stun.cloudflare.com:3478"},
+  {urls:["turn:eu-0.turn.peerjs.com:3478","turn:us-0.turn.peerjs.com:3478"], username:"peerjs", credential:"peerjsp"},
+  // ↓ 無料TURN（Metered / ExpressTURN など）の認証情報をここに足すと、モバイル回線どうしでもつながりやすくなる
+  // {urls:["turn:example.com:80","turn:example.com:443?transport=tcp"], username:"xxxx", credential:"xxxx"},
+];
+const PEER_OPTS = () => ({debug:0, config:{iceServers:ICE_SERVERS}, ...(window.__DFG_PEER_OPTS__||{})});
+let connStatus="", myName="", roomPeerId="", joinGen=0, clientTries=0;
+let rejoinUntil=0, kicked=false, lastHostMsg=0, hbTimer=null;
 function setStatus(m){ connStatus=m; if(!S && screen==="room") render(); }
+function netBar(msg){
+  const b=document.getElementById("netbar"); if(!b) return;
+  if(msg){ b.textContent="🔄 "+msg; b.hidden=false; } else b.hidden=true;
+}
 function hostApply(actor,a){
   const s=clone(S); const r=applyAction(s,actor,a);
   if(r===true){ S=s; broadcast(); render(); driveBots(); }
@@ -1049,13 +1075,25 @@ function hostApply(actor,a){
 }
 function sendState(c){ if(c.open){ try{ c.send({state:viewFor(S,c.pid)}); }catch(e){} } }
 function broadcast(){ for(const c of conns.values()) sendState(c); }
+const liveConn = id => { const c=conns.get(id); return c && c.open && Date.now()-(c.lastSeen||0) < 12000; };
+
 function setupHostConn(c){
+  c.lastSeen=Date.now();
   c.on("data", m=>{
     if(!m || typeof m!=="object" || !S) return;
+    c.lastSeen=Date.now();
+    if(m.t==="ping"){ try{ c.send({pong:1}); }catch(e){} return; }
+    if(m.t==="merge"){ handleMerge(c,m); return; }
     if(m.t==="join"){
-      c.pid=String(m.id||"").slice(0,40); if(!c.pid) return;
-      const old=conns.get(c.pid); conns.set(c.pid,c);
-      if(old && old!==c) try{ old.close(); }catch(e){}
+      const pid=String(m.id||"").slice(0,40); if(!pid) return;
+      c.pid=pid;
+      const old=conns.get(pid); conns.set(pid,c);
+      if(old && old!==c){ try{ old.send({kicked:1}); }catch(e){} setTimeout(()=>{ try{ old.close(); }catch(e){} },150); }
+      // 同じ名前で、接続が死んでる「幽霊」は片付けてから入れる
+      const nm=String(m.name||"").slice(0,10);
+      const ghost=S.players.find(p=>p.name===nm && p.id!==pid && p.id!==myId && !p.bot && !liveConn(p.id));
+      if(ghost){ const gc=conns.get(ghost.id); if(gc){ conns.delete(ghost.id); try{gc.close()}catch(e){} } hostApply(myId,{t:"drop",id:ghost.id}); }
+      try{ c.send({avatars:{...avatars}}); }catch(e){}
     }
     if(!c.pid) return;
     if(m.t==="avatar"){
@@ -1064,14 +1102,22 @@ function setupHostConn(c){
       for(const x of conns.values()) if(x.open) try{ x.send({avatars:{[c.pid]:d}}); }catch(e){}
       render(); return;
     }
-    if(m.t==="join") try{ c.send({avatars:{...avatars}}); }catch(e){}
     const r=hostApply(c.pid,m);
     if(typeof r==="string"){ try{ c.send({err:r, fatal:m.t==="join"}); }catch(e){} }
     else if(r===false && m.t==="join") sendState(c);
   });
-  c.on("close", ()=>{ if(c.pid && conns.get(c.pid)===c){ conns.delete(c.pid); if(S) hostApply(c.pid,{t:"leave"}); } });
+  c.on("close", ()=>dropConn(c));
   c.on("error", ()=>{});
 }
+function dropConn(c){ if(c.pid && conns.get(c.pid)===c){ conns.delete(c.pid); if(S && p2pHost) hostApply(c.pid,{t:"leave"}); } }
+function hostWatchdog(gen){
+  clearInterval(hbTimer);
+  hbTimer=setInterval(()=>{
+    if(gen!==joinGen || !p2pHost){ clearInterval(hbTimer); return; }
+    for(const c of [...conns.values()]) if(Date.now()-(c.lastSeen||0) > 25000){ try{ c.close(); }catch(e){} dropConn(c); }
+  },5000);
+}
+
 function becomeHost(state, gen){
   setStatus(state ? "ホストを引き継ぎ中…" : "部屋を作成中…");
   let tries=0;
@@ -1080,94 +1126,169 @@ function becomeHost(state, gen){
     const p=new window.Peer(roomPeerId, PEER_OPTS()); peer=p;
     p.on("open", ()=>{
       if(gen!==joinGen){ try{p.destroy()}catch(e){} return; }
-      p2pHost=true; migrating=false; clearTimeout(loadTimer);
+      if(p2pHost) { netBar(""); return; }        // シグナリング再接続
+      p2pHost=true; rejoinUntil=0; clearTimeout(loadTimer); netBar(""); hostWatchdog(gen);
       if(state){ S=state; render(); driveBots(); toast("ホストを引き継いだよ"); }
       else { S=blankRoom(myId); hostApply(myId,{t:"join",name:myName}); }
     });
     p.on("connection", setupHostConn);
-    p.on("disconnected", ()=>{ try{ p.reconnect(); }catch(e){} });
+    p.on("disconnected", ()=>{ if(gen!==joinGen) return; setTimeout(()=>{ try{ if(!p.destroyed) p.reconnect(); }catch(e){} },1000); });
     p.on("error", e=>{
       if(gen!==joinGen) return;
       if(e.type==="unavailable-id"){
+        if(p2pHost && S){ recoverLostId(gen); return; }          // ホスト中にIDを取られた
         try{p.destroy()}catch(_){}
         if(state){ if(++tries<15) setTimeout(attempt,1000); else failP2P("ホストを引き継げませんでした"); }
-        else startClient(gen);   // 既に部屋がある→そこに入る
+        else startClient(gen);                                     // 部屋がある→そこに入る
       } else if(!p2pHost){
         try{p.destroy()}catch(_){}
-        if(++tries<4) setTimeout(attempt,800); else failP2P("接続できませんでした（"+e.type+"）");
-      } else toast("通信エラー: "+e.type);
+        if(++tries<4) setTimeout(attempt,900); else failP2P(netErrMsg(e));
+      } else if(e.type==="network" || e.type==="server-error" || e.type==="socket-error" || e.type==="socket-closed"){
+        setTimeout(()=>{ try{ if(!p.destroyed) p.reconnect(); }catch(_){} },2000);
+      }
     });
   };
   attempt();
 }
+function netErrMsg(e){
+  const t=e&&e.type;
+  if(t==="network"||t==="server-error"||t==="socket-error"||t==="socket-closed") return "接続サーバーにつながらなかった（電波を確認してもう一度）";
+  if(t==="browser-incompatible") return "このブラウザは非対応みたい";
+  return "接続できませんでした（"+t+"）";
+}
+
 function startClient(gen){
   if(gen!==joinGen) return;
-  setStatus(migrating ? "新しいホストに再接続中…" : "部屋を探してる…");
+  setStatus(rejoinUntil ? "再接続中…" : "部屋を探してる…");
   const p=new window.Peer(PEER_OPTS()); peer=p;
   p.on("open", ()=>connectHost(p,gen));
-  p.on("disconnected", ()=>{ try{ p.reconnect(); }catch(e){} });
+  p.on("disconnected", ()=>{ try{ if(!p.destroyed) p.reconnect(); }catch(e){} });
   p.on("error", e=>{
     if(gen!==joinGen) return;
+    try{p.destroy()}catch(_){}
     if(e.type==="peer-unavailable"){
-      try{p.destroy()}catch(_){}
-      if(migrating){ if(++clientTries<15) setTimeout(()=>startClient(gen),1000); else failP2P("ホストの引き継ぎに失敗しました"); }
-      else becomeHost(null, gen);                                    // 部屋がまだ無い→自分がホスト
-    } else if(!S){
-      try{p.destroy()}catch(_){}
-      if(++clientTries<4) setTimeout(()=>startClient(gen),800); else failP2P("接続できませんでした（"+e.type+"）");
-    } else toast("通信エラー: "+e.type);
+      if(Date.now()<rejoinUntil){ netBar("ホストを探してる…"); setTimeout(()=>startClient(gen),1500); }
+      else if(S && rejoinUntil){ failP2P("ホストが見つからなくなりました（ホストが閉じたかも）"); }
+      else becomeHost(null, gen);                                 // 部屋がまだ無い→自分がホスト
+    } else if(Date.now()<rejoinUntil){ setTimeout(()=>startClient(gen),1500); }
+    else if(!S && ++clientTries<4){ setTimeout(()=>startClient(gen),900); }
+    else failP2P(netErrMsg(e));
   });
 }
 function connectHost(p,gen){
-  setStatus(migrating ? "新しいホストに再接続中…" : "部屋に接続中…");
+  setStatus(rejoinUntil ? "再接続中…" : "部屋に接続中…");
   const c=p.connect(roomPeerId,{reliable:true}); conn=c;
   const to=setTimeout(()=>{
     if(gen!==joinGen || c.open) return;
     try{c.close()}catch(e){} try{p.destroy()}catch(e){}
-    if(++clientTries<5) startClient(gen); else failP2P("ホストに接続できませんでした");
-  }, 8000);
-  c.on("open", ()=>{ clearTimeout(to); clientTries=0; c.send({t:"join",name:myName,id:myId}); if(myAvatar) c.send({t:"avatar",data:myAvatar}); });
+    if(Date.now()<rejoinUntil || ++clientTries<4) startClient(gen);
+    else failP2P("ホストに直接つながらなかった（回線の相性かも。Wi-Fi⇔モバイル回線を切り替えて試してみて）");
+  }, 9000);
+  c.on("open", ()=>{
+    clearTimeout(to); clientTries=0; rejoinUntil=0; lastHostMsg=Date.now(); netBar("");
+    c.send({t:"join",name:myName,id:myId}); if(myAvatar) c.send({t:"avatar",data:myAvatar});
+    clientHeartbeat(gen,c);
+  });
   c.on("data", m=>{
     if(gen!==joinGen || !m) return;
+    lastHostMsg=Date.now();
+    if(m.pong) return;
+    if(m.kicked){ kicked=true; failP2P("別の画面で入り直したので、こっちは切断したよ"); return; }
     if(m.avatars){ mergeAvatars(m.avatars); return; }
     if(m.state){ S=m.state; clearTimeout(loadTimer); render(); }
     else if(m.err){ if(m.fatal) failP2P(m.err); else toast(m.err); }
     else if(m.migrate){
-      migrating=true;
+      rejoinUntil=Date.now()+30000;
       if(m.migrate===myId && m.full){ const st=m.full; c.__handoff=true; try{c.close()}catch(e){} try{p.destroy()}catch(e){} becomeHost(st,gen); }
-      else toast("ホストが交代中…");
+      else netBar("ホストが交代中…");
     }
   });
   c.on("close", ()=>{
     clearTimeout(to);
-    if(gen!==joinGen || mode!=="online" || p2pHost || c.__handoff) return;
-    if(migrating){ try{p.destroy()}catch(e){} clientTries=0; setTimeout(()=>startClient(gen),1200); }
-    else failP2P("ホストとの接続が切れました（ホストが画面を閉じたかも）");
+    if(gen!==joinGen || mode!=="online" || p2pHost || c.__handoff || kicked || c!==conn) return;
+    startRejoin(gen);
   });
   c.on("error", ()=>{});
 }
+function startRejoin(gen){
+  if(gen!==joinGen || p2pHost || kicked) return;
+  if(!rejoinUntil || Date.now()>rejoinUntil) rejoinUntil=Date.now()+30000;
+  netBar("再接続中…");
+  const old=conn; conn=null; if(old){ old.__handoff=true; try{old.close()}catch(e){} }
+  try{ peer && peer.destroy(); }catch(e){}
+  setTimeout(()=>startClient(gen), 600);
+}
+function clientHeartbeat(gen,c){
+  clearInterval(hbTimer);
+  hbTimer=setInterval(()=>{
+    if(gen!==joinGen || p2pHost || c!==conn){ clearInterval(hbTimer); return; }
+    if(c.open) try{ c.send({t:"ping"}); }catch(e){}
+    if(Date.now()-lastHostMsg > 15000){ clearInterval(hbTimer); startRejoin(gen); }   // ホストから応答なし
+  },4000);
+}
+document.addEventListener("visibilitychange", ()=>{
+  if(document.visibilityState!=="visible" || mode!=="online" || net!=="p2p" || p2pHost || kicked) return;
+  if(!conn || !conn.open || Date.now()-lastHostMsg>8000){ if(!rejoinUntil) startRejoin(joinGen); }
+});
+
+// ホストがIDを失った時：IDを取った空の部屋に、今のゲーム状態ごと合流する
+function recoverLostId(gen){
+  netBar("部屋を復旧中…");
+  const tmp=new window.Peer(PEER_OPTS());
+  tmp.on("open", ()=>{
+    const c=tmp.connect(roomPeerId,{reliable:true});
+    const to=setTimeout(()=>{ try{tmp.destroy()}catch(e){} netBar(""); toast("部屋の復旧に失敗…いったん入り直してね"); },10000);
+    c.on("open", ()=>c.send({t:"merge", full:S}));
+    c.on("data", m=>{
+      if(m && m.mergeOk){
+        clearTimeout(to);
+        for(const x of conns.values()) try{ x.send({migrate:"_"}); }catch(e){}
+        setTimeout(()=>{
+          for(const x of conns.values()) try{ x.close(); }catch(e){}
+          conns.clear(); try{ peer.destroy(); }catch(e){} try{ tmp.destroy(); }catch(e){}
+          p2pHost=false; clearInterval(hbTimer);
+          rejoinUntil=Date.now()+30000; startClient(gen);
+        },400);
+      } else if(m && m.mergeNo){ clearTimeout(to); try{tmp.destroy()}catch(e){} netBar(""); toast("同じ合言葉の別の部屋ができちゃった…合言葉を変えてね"); }
+    });
+  });
+  tmp.on("error", e=>{
+    if(e.type==="peer-unavailable"){ try{tmp.destroy()}catch(_){} try{ peer.reconnect(); }catch(_){} }  // IDが空いた→取り戻す
+  });
+}
+function handleMerge(c,m){
+  const st=m.full;
+  const ok = S && S.phase==="lobby" && S.round===0 && S.players.filter(p=>!p.bot).length<=1 && st && Array.isArray(st.players);
+  if(!ok){ try{ c.send({mergeNo:1}); }catch(e){} return; }
+  st.host=myId; S=st;
+  hostApply(myId,{t:"join",name:myName});
+  try{ c.send({mergeOk:1}); }catch(e){}
+  toast("元の部屋に合流したよ");
+}
+
 function joinP2P(name, pass){
-  myName=name; roomPeerId="pdfg-"+hash(normPass(pass)); clientTries=0; migrating=false;
+  myName=name; roomPeerId="pdfg-"+hash(normPass(pass)); clientTries=0; rejoinUntil=0; kicked=false;
   const gen=++joinGen;
-  becomeHost(null, gen);        // ID取得はすぐ成否が返るので、まずホストを試す（部屋があれば即クライアントへ）
+  becomeHost(null, gen);
   clearTimeout(loadTimer);
-  loadTimer=setTimeout(()=>{ if(!S && gen===joinGen) failP2P("接続がタイムアウトしました"); },30000);
+  loadTimer=setTimeout(()=>{ if(!S && gen===joinGen) failP2P("接続がタイムアウトしました（電波を確認してもう一度）"); },30000);
 }
 function failP2P(m){ backToEntry(m); }
 function cleanupP2P(){
-  joinGen++; clearTimeout(loadTimer);
-  try{ conn && conn.close(); }catch(e){}
+  joinGen++; clearTimeout(loadTimer); clearInterval(hbTimer); netBar("");
+  const c0=conn; conn=null;
+  try{ c0 && c0.close(); }catch(e){}
   for(const c of conns.values()) try{ c.close(); }catch(e){}
-  conns.clear(); conn=null;
+  conns.clear();
   try{ peer && peer.destroy(); }catch(e){}
-  peer=null; p2pHost=false; migrating=false;
+  peer=null; p2pHost=false; rejoinUntil=0;
 }
 // ホストが抜けるときは、残っている人にホストを引き継ぐ
 async function handoffHost(){
   const s=clone(S);
   if(applyAction(s,myId,{t:"leave"})!==true) return;
   const nh=s.host;
-  if(nh===myId || !conns.get(nh) || !conns.get(nh).open) return;
+  if(nh===myId || !liveConn(nh)) return;
   for(const [pid,c] of conns){ try{ c.send(pid===nh ? {migrate:nh, full:s} : {migrate:nh}); }catch(e){} }
   await sleep(500);
 }
