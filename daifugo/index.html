@@ -181,6 +181,15 @@ html,body,button,.card,.seat{touch-action:manipulation}
 @keyframes rib{50%{transform:translateX(-50%) scale(1.08)}}
 .table.myturn #play:not(:disabled){animation:btnp 1s ease-in-out infinite}
 @keyframes btnp{50%{box-shadow:0 3px 0 #a86f0c,0 0 18px 4px rgba(255,214,90,.8)}}
+
+/* ===== アイコン画像 ===== */
+.ava.img{background-size:cover;background-position:center;background-color:#333}
+.miniava{display:inline-block;vertical-align:middle;margin-right:5px;flex:none}
+.miniava .ava{width:100%;height:100%;border-width:2px;outline-width:1px;font-size:60%;border-radius:6px}
+.rank li{display:flex;align-items:center;gap:4px}
+.avpick{flex:none;width:52px;height:52px;padding:0;border-radius:12px;font-size:24px;background:rgba(0,0,0,.35);border:2px dashed rgba(255,255,255,.4);box-shadow:none;overflow:hidden}
+.avpick span{display:block;width:100%;height:100%;background-size:cover;background-position:center}
+.pl .nm{display:flex;align-items:center}
 </style>
 </head>
 <body>
@@ -972,7 +981,60 @@ async function joinDb(name, pass){
     if(!snap.exists) return;
     S = snap.data(); render(); driveBots();
   }, e=>{ clearTimeout(loadTimer); toast("接続が切れました: "+e.code); });
+  try{
+    avUnsub = db.collection(roomPath+"/av").onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=d.data(); if(v) m[d.id]=v.data||""; }); mergeAvatars(m); }, ()=>{});
+  }catch(e){}
+  shareAvatar();
 }
+
+// ---- アイコン画像（ゲーム状態とは別に配る） ----
+const AVA_RE=/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/;
+const avatars={};                                   // pid -> dataURL
+let myAvatar = store.get("dfg_avatar")||""; if(!AVA_RE.test(myAvatar)) myAvatar="";
+let avUnsub=null;
+function okAvatar(d){ return typeof d==="string" && d.length<40000 && AVA_RE.test(d); }
+async function makeAvatar(file){
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=url; });
+    const N=96, c=document.createElement("canvas"); c.width=c.height=N;
+    const g=c.getContext("2d"), m=Math.min(img.naturalWidth,img.naturalHeight);
+    g.drawImage(img,(img.naturalWidth-m)/2,(img.naturalHeight-m)/2,m,m,0,0,N,N);
+    let q=.82, d=c.toDataURL("image/jpeg",q);
+    while(d.length>30000 && q>.4){ q-=.12; d=c.toDataURL("image/jpeg",q); }
+    return d;
+  } finally { URL.revokeObjectURL(url); }
+}
+function pickAvatar(){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*";
+  inp.onchange=async()=>{
+    const f=inp.files&&inp.files[0]; if(!f) return;
+    try{ setMyAvatar(await makeAvatar(f)); toast("アイコンを設定した！"); }
+    catch(e){ toast("その画像は読み込めなかった…"); }
+  };
+  inp.click();
+}
+function setMyAvatar(d){
+  myAvatar = okAvatar(d) ? d : "";
+  store.set("dfg_avatar", myAvatar);
+  if(myAvatar) avatars[myId]=myAvatar; else delete avatars[myId];
+  shareAvatar(); render();
+}
+function shareAvatar(){
+  if(mode!=="online") return;
+  if(net==="p2p"){
+    if(p2pHost){ const d={[myId]:myAvatar||""}; for(const c of conns.values()) if(c.open) try{ c.send({avatars:d}); }catch(e){} }
+    else if(conn && conn.open) try{ conn.send({t:"avatar",data:myAvatar||""}); }catch(e){}
+  } else if(net==="db" && db && roomPath){
+    db.collection(roomPath+"/av").doc(myId).set({data:myAvatar||"", at:Date.now()}).catch(()=>{});
+  }
+}
+function mergeAvatars(m){
+  let ch=false;
+  for(const [id,d] of Object.entries(m||{})){ if(okAvatar(d)){ if(avatars[id]!==d){ avatars[id]=d; ch=true; } } else if(d==="" && avatars[id]){ delete avatars[id]; ch=true; } }
+  if(ch && S) render();
+}
+function resetAvatars(){ for(const k in avatars) delete avatars[k]; if(myAvatar) avatars[myId]=myAvatar; if(avUnsub){ avUnsub(); avUnsub=null; } }
 
 // ---- P2P（自前ホスティング時） ----
 // 合言葉 → peer ID。まず「既にある部屋」につなぎに行き、無ければ自分がホストになる。
@@ -996,6 +1058,13 @@ function setupHostConn(c){
       if(old && old!==c) try{ old.close(); }catch(e){}
     }
     if(!c.pid) return;
+    if(m.t==="avatar"){
+      const d=okAvatar(m.data)?m.data:"";
+      if(d) avatars[c.pid]=d; else delete avatars[c.pid];
+      for(const x of conns.values()) if(x.open) try{ x.send({avatars:{[c.pid]:d}}); }catch(e){}
+      render(); return;
+    }
+    if(m.t==="join") try{ c.send({avatars:{...avatars}}); }catch(e){}
     const r=hostApply(c.pid,m);
     if(typeof r==="string"){ try{ c.send({err:r, fatal:m.t==="join"}); }catch(e){} }
     else if(r===false && m.t==="join") sendState(c);
@@ -1057,9 +1126,10 @@ function connectHost(p,gen){
     try{c.close()}catch(e){} try{p.destroy()}catch(e){}
     if(++clientTries<5) startClient(gen); else failP2P("ホストに接続できませんでした");
   }, 8000);
-  c.on("open", ()=>{ clearTimeout(to); clientTries=0; c.send({t:"join",name:myName,id:myId}); });
+  c.on("open", ()=>{ clearTimeout(to); clientTries=0; c.send({t:"join",name:myName,id:myId}); if(myAvatar) c.send({t:"avatar",data:myAvatar}); });
   c.on("data", m=>{
     if(gen!==joinGen || !m) return;
+    if(m.avatars){ mergeAvatars(m.avatars); return; }
     if(m.state){ S=m.state; clearTimeout(loadTimer); render(); }
     else if(m.err){ if(m.fatal) failP2P(m.err); else toast(m.err); }
     else if(m.migrate){
@@ -1104,11 +1174,13 @@ async function handoffHost(){
 
 // ---- 入退室 ----
 function joinOnline(name, pass){
+  resetAvatars();
   roomKey=pass; mode="online"; screen="room"; S=null; errMsg=""; lastFxN=null; render();
   try{ if(!inArtifact) history.replaceState(null,"","#"+encodeURIComponent(pass)); }catch(e){}
   if(net==="db") joinDb(name,pass); else joinP2P(name,pass);
 }
 function startSolo(name){
+  resetAvatars();
   mode="solo"; screen="room"; roomKey="ひとりモード"; lastFxN=null;
   const s=blankRoom(myId);
   applyAction(s,myId,{t:"join",name});
@@ -1118,6 +1190,7 @@ function startSolo(name){
 }
 function backToEntry(msg){
   if(unsub){unsub();unsub=null;}
+  resetAvatars();
   cleanupP2P();
   mode=null; S=null; screen="entry"; sel.clear(); errMsg=msg||""; document.body.classList.remove("revmode"); render();
 }
@@ -1218,16 +1291,20 @@ const AVA_COLORS=[["#ff8a8a","#c94040"],["#7fc8ff","#2a6fc9"],["#9be38a","#3c9a2
 function avatar(p){
   let h=0; for(const ch of p.id) h=(h*31+ch.charCodeAt(0))>>>0;
   const [a,b]=AVA_COLORS[h%AVA_COLORS.length];
+  const img = !p.bot && avatars[p.id];
+  if(img && okAvatar(img)) return `<div class="ava img" style="background-image:url('${img}')"></div>`;
   const t = p.bot ? "🤖" : esc([...p.name][0]||"?");
   return `<div class="ava" style="background:linear-gradient(150deg,${a},${b})">${t}</div>`;
 }
+function miniAva(p, size=28){ return `<span class="miniava" style="width:${size}px;height:${size}px">${avatar(p)}</span>`; }
 const soundBtn = (cls="small ghost") => `<button class="${cls}" id="snd" title="効果音">${soundOn?"🔊":"🔇"}</button>`;
 function bindSound(){ const b=document.getElementById("snd"); if(b) b.onclick=()=>{ soundOn=!soundOn; store.set("dfg_snd",soundOn?"1":"0"); ensureAudio(); if(soundOn) sfx("turn"); b.textContent=soundOn?"🔊":"🔇"; }; }
 
+let hashKeep="";
 function renderEntry(){
   document.body.classList.remove("revmode");
   const nm=store.get("dfg_name")||"";
-  let hashPass=""; try{ hashPass = !inArtifact && location.hash.length>1 ? decodeURIComponent(location.hash.slice(1)) : ""; }catch(e){}
+  let hashPass=hashKeep||""; try{ if(!hashPass) hashPass = !inArtifact && location.hash.length>1 ? decodeURIComponent(location.hash.slice(1)) : ""; }catch(e){}
   const netMsg = !netChecked ? "接続確認中…" : !net ? "オンライン機能が使えない環境です（ひとりモードは遊べる）" : "";
   const howto = net==="p2p"
     ? `このページのURLと合言葉を送るだけで友達が入れる（最大${MAX_PLAYERS}人・ゲーム中でも途中参加OK）。最初に入った人がホストになって、ホストが「退出」すると他の人に自動で引き継がれるよ。`
@@ -1236,7 +1313,12 @@ function renderEntry(){
     <div class="row"><h1 class="grow">🃏 合言葉大富豪</h1>${soundBtn()}</div>
     <div class="sub">同じ合言葉を入れた人と同じ部屋で遊べる</div>
     <div class="panel">
-      <label>なまえ</label><input id="nm" maxlength="10" value="${esc(nm)}" placeholder="ぽすまん">
+      <label>アイコン・なまえ</label>
+      <div class="row" style="flex-wrap:nowrap">
+        <button class="avpick" id="avpick" title="アイコン画像を選ぶ">${myAvatar?`<span style="background-image:url('${myAvatar}')"></span>`:"📷"}</button>
+        <input id="nm" class="grow" maxlength="10" value="${esc(nm)}" placeholder="ぽすまん" style="width:auto;min-width:0">
+      </div>
+      ${myAvatar?`<div style="margin-top:4px"><button class="small ghost" id="avdel">アイコンを外す</button></div>`:`<div class="note" style="margin-top:4px">📷 をタップで写真をアイコンにできるよ</div>`}
       <label>合言葉</label><input id="pw" maxlength="30" value="${esc(hashPass)}" placeholder="例: いがりんご" autocomplete="off">
       <div class="btnrow"><button id="go" ${net?"":"disabled"}>部屋に入る</button></div>
       <div class="err" id="err">${esc(errMsg||netMsg)}</div>
@@ -1246,6 +1328,9 @@ function renderEntry(){
   errMsg="";
   bindSound();
   const nmI=document.getElementById("nm"), pwI=document.getElementById("pw"), er=document.getElementById("err");
+  const keep=()=>{ store.set("dfg_name",nmI.value.trim()); hashKeep=pwI.value; };
+  document.getElementById("avpick").onclick=()=>{ keep(); pickAvatar(); };
+  const ad=document.getElementById("avdel"); if(ad) ad.onclick=()=>{ keep(); setMyAvatar(""); };
   document.getElementById("go").onclick=()=>{
     ensureAudio();
     const n=nmI.value.trim(), p=pwI.value.trim();
@@ -1264,16 +1349,18 @@ function playerChips(){
     if(p.bot) meta = p.away?"不在（CPU）":"CPU";
     else if(p.id===S.host) meta = mode==="online" ? "👑 ホスト" : "";
     else meta = p.ready ? `<span class="ok">✅ 準備OK</span>` : "準備中…";
-    const rm = host && S.phase!=="play" && p.id!==myId ? `<button class="small ghost" data-rm="${p.id}" style="margin-top:4px">外す</button>` : "";
+    const rm = host && S.phase!=="play" && p.id!==myId ? `<button class="small ghost" data-rm="${p.id}" style="margin-top:4px">外す</button>`
+             : p.id===myId ? `<button class="small ghost" data-avchg="1" style="margin-top:4px">📷 アイコン変更</button>` : "";
     return `<div class="pl ${p.id===myId?"me":""} ${p.ready?"ready":""}">
       ${bubbleHtml(p.id)}
-      <div class="nm">${esc(p.name)}${title?`<span class="badge ${title==="大富豪"?"gold":title==="大貧民"?"bad":""}">${title}</span>`:""}</div>
+      <div class="nm">${miniAva(p)}${esc(p.name)}${title?`<span class="badge ${title==="大富豪"?"gold":title==="大貧民"?"bad":""}">${title}</span>`:""}</div>
       <div class="meta">${meta}</div>${rm}</div>`;
   }).join("")}</div>`;
 }
 function bindChips(){
   app.querySelectorAll("[data-bot]").forEach(b=>b.onclick=()=>act({t:"tobot",id:b.dataset.bot}));
   app.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>act({t:"rm",id:b.dataset.rm}));
+  app.querySelectorAll("[data-avchg]").forEach(b=>b.onclick=()=>pickAvatar());
 }
 function rulesPanel(){
   const host=isHost() && S.phase!=="play", R=S.rules;
@@ -1478,7 +1565,7 @@ function renderGame(){
     <div class="mebar" id="mebar">
       ${bubbleHtml(myId)}
       <div class="meinfo">
-        <div class="plate" style="${myMoment?"background:linear-gradient(#ffe08a,#f5b52e);color:#3a2600":""}">${esc(meP.name)}${myTitle?` · ${myTitle}`:""}</div>
+        <div class="row" style="gap:5px;flex-wrap:nowrap">${miniAva(meP,34)}<div class="plate" style="${myMoment?"background:linear-gradient(#ffe08a,#f5b52e);color:#3a2600":""}">${esc(meP.name)}${myTitle?` · ${myTitle}`:""}</div></div>
         <span class="sstat ${fin>=0?"win":lost?"lose":""}">${fin>=0?`${fin+1}位 上がり！`:lost?"最下位…":`${myHand.length}枚`}</span>
       </div>
       <div class="mebtns">
@@ -1549,7 +1636,7 @@ function renderResult(){
   app.innerHTML=`<div class="page">
     <div class="row"><h1 class="grow">第${S.round}ラウンド 結果</h1>${chatBtn("small ghost")}${soundBtn()}</div>
     <div class="sub">合言葉 <span class="code" style="font-size:15px">${esc(roomKey)}</span> ${inviteBtn()}</div>
-    <div class="panel"><ol class="rank">${S.ranking.map(id=>`<li><b>${esc(nameOf(S,id))}</b> <span class="badge ${S.titles[id]==="大富豪"?"gold":S.titles[id]==="大貧民"?"bad":""}">${S.titles[id]}</span>${id===myId?" ← あなた":""}</li>`).join("")}</ol></div>
+    <div class="panel"><ol class="rank">${S.ranking.map(id=>`<li>${miniAva(S.players.find(p=>p.id===id)||{id,name:"?"},30)}<b>${esc(nameOf(S,id))}</b> <span class="badge ${S.titles[id]==="大富豪"?"gold":S.titles[id]==="大貧民"?"bad":""}">${S.titles[id]}</span>${id===myId?" ← あなた":""}</li>`).join("")}</ol></div>
     <div class="panel">${playerChips()}${startControls(true)}</div>
     ${mode==="online"?chatPreview():""}
     ${rulesPanel()}
