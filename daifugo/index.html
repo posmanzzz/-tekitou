@@ -131,12 +131,46 @@ button:disabled{opacity:.4;cursor:default;transform:none}
 @keyframes fall{to{transform:translate(var(--x),110vh) rotate(var(--r))}}
 .flash{position:absolute;inset:0;background:#fff;animation:flash .45s ease-out forwards}
 @keyframes flash{from{opacity:.55}to{opacity:0}}
+
+/* ===== 追加: チャット・準備・ボンバー ===== */
+.chat{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:25;display:flex;align-items:flex-end;justify-content:center}
+.chat[hidden]{display:none}
+.chat .inner{width:100%;max-width:560px;max-height:70vh;display:flex;flex-direction:column;gap:8px;background:linear-gradient(#1f5d1a,#0f3a0d);border-top:3px solid #c99a2e;border-radius:18px 18px 0 0;padding:14px 12px calc(14px + env(safe-area-inset-bottom))}
+.msgs{flex:1;overflow:auto;min-height:120px;display:flex;flex-direction:column;gap:6px}
+.msg{align-self:flex-start;max-width:85%;background:rgba(255,255,255,.12);border-radius:12px 12px 12px 3px;padding:6px 10px;font-size:14px}
+.msg b{display:block;font-size:10px;color:var(--accent)}
+.msg.mine{align-self:flex-end;background:rgba(245,197,66,.25);border-radius:12px 12px 3px 12px}
+.stamps{display:flex;gap:5px;overflow-x:auto;padding-bottom:2px}
+.stamps button{flex:none}
+#chatBtn{position:relative}
+.dot{position:absolute;top:-4px;right:-4px;background:#e23;color:#fff;font-size:10px;border-radius:99px;padding:1px 5px;font-weight:800;line-height:1.4}
+.bubble{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:6px;background:#fff;color:#222;font-size:12px;font-weight:700;padding:5px 9px;border-radius:12px;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;z-index:9;box-shadow:0 3px 8px rgba(0,0,0,.4);animation:bub 4.5s ease forwards;pointer-events:none}
+.bubble::after{content:"";position:absolute;top:100%;left:50%;margin-left:-6px;border:6px solid transparent;border-top-color:#fff}
+@keyframes bub{0%{opacity:0;transform:translateX(-50%) translateY(6px) scale(.8)}6%{opacity:1;transform:translateX(-50%) scale(1)}85%{opacity:1}100%{opacity:0}}
+.pl{position:relative}
+.pl.ready{border-color:#6fd36f}
+.pl .ok{color:#8ff08f;font-weight:700}
+.mebar .bubble{left:60px}
+.chatprev{cursor:pointer}
+.seat.sm{transform:translate(-50%,0) scale(.78);transform-origin:50% 0}
+.seat.xs{transform:translate(-50%,0) scale(.68);transform-origin:50% 0}
+.seat.talk{z-index:8}
+.sstat.think{background:#d26a1c}
+.bombpick{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px}
+.bombpick button{padding:6px 0;font-size:14px;background:#fff;color:#222;box-shadow:0 2px 0 #888;border-radius:8px;font-family:Georgia,serif;font-weight:900}
+.bombpick button.on{background:#ff6a3d;color:#fff;box-shadow:0 2px 0 #9a2a10}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="fx"></div>
 <div class="toast" id="toast"></div>
+<div class="chat" id="chat" hidden><div class="inner">
+  <div class="row"><b class="grow">💬 チャット</b><button class="small ghost" id="chatClose">閉じる</button></div>
+  <div class="msgs" id="msgs"></div>
+  <div class="stamps" id="stamps"></div>
+  <form id="chatForm" class="row" autocomplete="off"><input id="chatIn" class="grow" maxlength="80" placeholder="メッセージ" style="width:auto"><button>送信</button></form>
+</div></div>
 <script>
 (() => {
 "use strict";
@@ -160,13 +194,16 @@ const RULE_DEFS = [
   {k:"five",    name:"5スキップ", desc:"5の枚数だけ次を飛ばす"},
   {k:"miyako",  name:"都落ち",    desc:"大富豪が1位を逃すと最下位"},
   {k:"foul",    name:"反則上がり",desc:"JK・2・8で上がると最下位"},
+  {k:"seven",   name:"7渡し",     desc:"7の枚数だけ次の人に渡す"},
+  {k:"bomb",    name:"12ボンバー",desc:"Qの枚数だけ数字を指定→全員捨てる"},
   {k:"exchange",name:"カード交換",desc:"2戦目から階級で交換"},
 ];
-const DEFAULT_RULES = {eight:true,rev:true,seq:true,spade3:true,eb:false,shibari:false,five:false,miyako:false,foul:false,exchange:true,jokers:1};
+const MAX_PLAYERS = 10;
+const DEFAULT_RULES = {eight:true,rev:true,seq:true,spade3:true,eb:false,shibari:false,five:false,miyako:false,foul:false,seven:false,bomb:false,exchange:true,jokers:1};
 const PRESETS = {
   "定番": {...DEFAULT_RULES},
-  "全部盛り": {eight:true,rev:true,seq:true,spade3:true,eb:true,shibari:true,five:true,miyako:true,foul:true,exchange:true,jokers:2},
-  "シンプル": {eight:false,rev:false,seq:false,spade3:false,eb:false,shibari:false,five:false,miyako:false,foul:false,exchange:false,jokers:1},
+  "全部盛り": {eight:true,rev:true,seq:true,spade3:true,eb:true,shibari:true,five:true,miyako:true,foul:true,seven:true,bomb:true,exchange:true,jokers:2},
+  "シンプル": {eight:false,rev:false,seq:false,spade3:false,eb:false,shibari:false,five:false,miyako:false,foul:false,seven:false,bomb:false,exchange:false,jokers:1},
 };
 
 function titlesFor(n){
@@ -208,6 +245,7 @@ function analyze(cards, rules){
 // 出せるなら ""、出せないなら理由
 function canPlay(s, pid, cards){
   if(s.phase!=="play" || s.turn!==pid) return "あなたの番じゃない";
+  if(s.pending) return "選択中";
   if(!cards.length) return "カードを選んでね";
   const hand = s.hands[pid]||[];
   if(new Set(cards).size!==cards.length || !cards.every(c=>hand.includes(c))) return "手札にないカード";
@@ -261,7 +299,8 @@ function startRound(s){
   const d = newDeck(s.rules.jokers);
   const off = Math.floor(Math.random()*ids.length);
   d.forEach((c,i)=>s.hands[ids[(i+off)%ids.length]].push(c));
-  s.rev=false; clearField(s); s.finished=[]; s.losers=[]; s.ranking=[]; s.lastPlayer=null;
+  s.rev=false; clearField(s); s.finished=[]; s.losers=[]; s.ranking=[]; s.lastPlayer=null; s.pending=null; s.after=null;
+  s.players.forEach(p=>{ p.ready=false; delete p.wait; });
   s.round=(s.round||0)+1; s.log=[];
   log(s,`第${s.round}ラウンド開始`);
   fx(s,"round",{n:s.round});
@@ -290,7 +329,7 @@ function endRound(s){
   s.ranking = rank; s.prevFinish = rank.slice();
   const t = titlesFor(rank.length);
   s.titles = {}; rank.forEach((id,i)=>s.titles[id]=t[i]);
-  s.phase="result"; clearField(s); s.rev=false;
+  s.phase="result"; clearField(s); s.rev=false; s.pending=null; s.after=null;
   log(s,"ラウンド終了");
   fx(s,"end",{king:rank[0]});
 }
@@ -330,23 +369,97 @@ function doPlay(s,pid,cards){
     }
   }
   if(activeOf(s).length<=1){ endRound(s); return true; }
-  if(eight){
+  const cnt = r => cards.filter(c=>parse(c).r===r).length;
+  s.after = {pid, eight, five: R.five ? cnt(5) : 0};
+  const q=[];
+  if(R.seven && cnt(7) && s.hands[pid].length) q.push({type:"seven", n:Math.min(cnt(7), s.hands[pid].length)});
+  if(R.bomb && cnt(12)) q.push({type:"bomb", n:cnt(12)});
+  s.pendingQ=q;
+  nextPending(s);
+  return true;
+}
+
+// 7渡し・12ボンバーの選択待ちを順に処理
+function nextPending(s){
+  const q=s.pendingQ||[];
+  if(q.length){
+    s.pending={...q.shift(), pid:s.after.pid}; s.pendingQ=q;
+    s.turn=s.after.pid;
+    if(s.pending.type==="seven") s.pending.to = nextFrom(s,s.after.pid,false);
+    if(s.pending.type==="seven" && (!s.pending.to || s.pending.to===s.after.pid)) return nextPending(s);
+    fx(s,"pending",{type:s.pending.type});
+    return;
+  }
+  s.pending=null; s.pendingQ=[];
+  resolveAfter(s);
+}
+function finishIfEmpty(s,pid){
+  if(!s.hands[pid].length && !outSet(s).has(pid)){
+    s.finished.push(pid); log(s,`🎉 ${nameOf(s,pid)} 上がり（${s.finished.length}位）`);
+    fx(s,"finish",{who:nameOf(s,pid), place:s.finished.length, id:pid});
+  }
+}
+function resolveAfter(s){
+  const A=s.after||{}, pid=A.pid; s.after=null;
+  if(activeOf(s).length<=1){ endRound(s); return; }
+  if(A.eight){
     clearField(s); log(s,"✂ 8切り"); fx(s,"eight");
     s.turn = activeOf(s).includes(pid) ? pid : nextFrom(s,pid,false);
-    return true;
+    return;
   }
   let nx = nextFrom(s,pid,true);
-  if(R.five && has(5)){
-    const k = cards.filter(c=>parse(c).r===5).length;
-    for(let i=0;i<k;i++) nx = nextFrom(s,nx,true);
-    log(s,`⏭ ${k}人スキップ`); fx(s,"skip",{n:k});
+  if(A.five){
+    for(let i=0;i<A.five;i++) nx = nextFrom(s,nx,true);
+    log(s,`⏭ ${A.five}人スキップ`); fx(s,"skip",{n:A.five});
+  }
+  if(!nx){ // 全員パス済みなどで次がいない→場を流す
+    const lp=s.lastPlayer; clearField(s);
+    nx = activeOf(s).includes(lp) ? lp : nextFrom(s,lp,false);
   }
   s.turn = nx;
+}
+function doGive(s,pid,cards){
+  const P=s.pending;
+  if(!P || P.type!=="seven" || P.pid!==pid) return "今は渡せない";
+  if(new Set(cards).size!==cards.length || cards.length!==P.n || !cards.every(c=>s.hands[pid].includes(c))) return `${P.n}枚選んでね`;
+  s.hands[pid]=s.hands[pid].filter(c=>!cards.includes(c));
+  s.hands[P.to]=s.hands[P.to].concat(cards);
+  log(s,`🎁 ${nameOf(s,pid)} → ${nameOf(s,P.to)} に${P.n}枚渡した`);
+  fx(s,"seven",{from:pid,to:P.to,n:P.n});
+  finishIfEmpty(s,pid);
+  nextPending(s);
   return true;
+}
+function doBomb(s,pid,ranks){
+  const P=s.pending;
+  if(!P || P.type!=="bomb" || P.pid!==pid) return "今は選べない";
+  ranks=[...new Set(ranks.map(Number))].filter(r=>r>=3&&r<=16);
+  if(ranks.length!==P.n) return `数字を${P.n}つ選んでね`;
+  let total=0;
+  for(const id of activeOf(s)){
+    const before=s.hands[id].length;
+    s.hands[id]=s.hands[id].filter(c=>!ranks.includes(parse(c).r));
+    total+=before-s.hands[id].length;
+  }
+  log(s,`💣 ${nameOf(s,pid)} の12ボンバー: ${ranks.map(RANK_LABEL).join("・")}（${total}枚消滅）`);
+  fx(s,"bomb",{ranks:ranks.map(RANK_LABEL).join("・"),total});
+  const o=s.order, i=o.indexOf(pid);
+  for(let k=0;k<o.length;k++){ const id=o[(i+k)%o.length]; if(activeOf(s).includes(id)) finishIfEmpty(s,id); }
+  nextPending(s);
+  return true;
+}
+function botPending(s){
+  const P=s.pending, hand=s.hands[P.pid];
+  if(P.type==="seven") return doGive(s,P.pid,sortHand(hand,effRev(s)).slice(0,P.n));
+  const rev=effRev(s), mine=new Set(hand.map(c=>parse(c).r));
+  const all=[16,...Array.from({length:13},(_,i)=>i+3)].sort((a,b)=>st(b,rev)-st(a,rev));
+  const pick=all.filter(r=>!mine.has(r)).concat(all.filter(r=>mine.has(r))).slice(0,P.n);
+  return doBomb(s,P.pid,pick);
 }
 
 function doPass(s,pid){
   if(s.phase!=="play" || s.turn!==pid) return "あなたの番じゃない";
+  if(s.pending) return "選択中";
   if(!s.field) return "親はパスできない";
   s.passed.push(pid);
   log(s,`${nameOf(s,pid)}: パス`);
@@ -369,7 +482,8 @@ function combos(arr,k){
   rec(0,[]); return out;
 }
 function candidates(s,pid){
-  const hand=s.hands[pid], R=s.rules;
+  if(s.pending || s.turn!==pid) return [];
+  const hand=s.hands[pid]||[], R=s.rules;
   const jokers=hand.filter(isJoker);
   const byRank={};
   hand.forEach(c=>{const p=parse(c); if(p.r!==16)(byRank[p.r]=byRank[p.r]||[]).push(c);});
@@ -425,11 +539,13 @@ function replaceId(s, oldId, newId){
   for(const k of ["hands","titles","counts"]) if(s[k] && s[k][oldId]!==undefined){ s[k][newId]=s[k][oldId]; delete s[k][oldId]; }
   ["turn","lastPlayer","host"].forEach(k=>{ if(s[k]===oldId) s[k]=newId; });
   if(s.field && s.field.by===oldId) s.field.by=newId;
+  if(s.pending){ if(s.pending.pid===oldId) s.pending.pid=newId; if(s.pending.to===oldId) s.pending.to=newId; }
+  if(s.after && s.after.pid===oldId) s.after.pid=newId;
 }
 let botSeq=0;
-const BOT_NAMES=["タロウ","ハナコ","ジロウ","サクラ","ケンタ","ミドリ"];
+const BOT_NAMES=["タロウ","ハナコ","ジロウ","サクラ","ケンタ","ミドリ","ゴロウ","モモ","リク","ユイ"];
 function addBot(s){
-  if(s.players.length>=6) return "最大6人";
+  if(s.players.length>=MAX_PLAYERS) return `最大${MAX_PLAYERS}人`;
   const used=s.players.map(p=>p.name);
   const nm=BOT_NAMES.find(b=>!used.includes("CPU "+b))||"X";
   s.players.push({id:"b"+Date.now().toString(36)+(botSeq++)+Math.random().toString(36).slice(2,5),name:"CPU "+nm,bot:true});
@@ -448,15 +564,25 @@ function applyAction(s, actor, a){
       const same=s.players.find(p=>p.name===name);
       if(same && same.away){ replaceId(s,same.id,actor); same.bot=false; same.away=false; log(s,`${name} が復帰`); r=true; break; }
       if(same){ r="同じ名前の人がいるよ（別の名前にしてね）"; break; }
-      if(s.phase==="play"){ r="ゲーム中です。ラウンドが終わったら入ってね"; break; }
-      if(s.players.length>=6){ r="満員（6人）です"; break; }
+      if(s.phase==="play"){
+        // 途中参加: 抜けた人の席→まだ残ってるCPUの席→観戦（次ラウンドから）
+        const out=outSet(s);
+        const seat = s.players.find(p=>p.away && s.order.includes(p.id) && !out.has(p.id))
+                  || s.players.find(p=>p.bot && s.order.includes(p.id) && !out.has(p.id));
+        if(seat){
+          const old=seat.name; replaceId(s,seat.id,actor);
+          seat.bot=false; seat.away=false; seat.name=name;
+          log(s,`${name} が途中参加（${old}の席）`); fx(s,"join",{who:name}); r=true; break;
+        }
+      }
+      if(s.players.length>=MAX_PLAYERS){ r=`満員（${MAX_PLAYERS}人）です`; break; }
       if(!s.players.some(p=>!p.bot)) s.host=actor;
-      s.players.push({id:actor,name,bot:false});
-      log(s,`${name} が入室`); r=true; break;
+      s.players.push({id:actor,name,bot:false,ready:false, ...(s.phase==="play"?{wait:true}:{})});
+      log(s, s.phase==="play" ? `${name} が観戦中（次のラウンドから参加）` : `${name} が入室`); fx(s,"join",{who:name}); r=true; break;
     }
     case "leave": {
       const p=s.players.find(x=>x.id===actor); if(!p) break;
-      if(s.phase==="play"){ p.bot=true; p.away=true; log(s,`${p.name} が抜けた（CPUが代打ち）`); }
+      if(s.phase==="play" && s.order.includes(p.id)){ p.bot=true; p.away=true; log(s,`${p.name} が抜けた（CPUが代打ち）`); }
       else { s.players=s.players.filter(x=>x.id!==actor); s.ranking=s.ranking.filter(x=>x!==actor); log(s,`${p.name} が退出`); }
       if(s.host===actor){ const h=s.players.find(x=>!x.bot); if(h) s.host=h.id; }
       r=true; break;
@@ -469,13 +595,27 @@ function applyAction(s, actor, a){
       for(const d of RULE_DEFS) if(a.rules && typeof a.rules[d.k]==="boolean") nr[d.k]=a.rules[d.k];
       if(a.rules && [0,1,2].includes(a.rules.jokers)) nr.jokers=a.rules.jokers;
       s.rules=nr; r=true; } break;
-    case "start": case "next":
-      if(host && s.phase!=="play" && s.players.length>=2){ startRound(s); r=true; } break;
+    case "start": case "next": {
+      if(!host || s.phase==="play" || s.players.length<2) break;
+      const notReady=s.players.filter(p=>!p.bot && p.id!==s.host && !p.ready);
+      if(notReady.length && !a.force){ r=`${notReady.map(p=>p.name).join("、")} の準備待ち`; break; }
+      startRound(s); r=true; break;
+    }
+    case "ready": { const p=s.players.find(x=>x.id===actor); if(p && s.phase!=="play"){ p.ready=!!a.v; r=true; } break; }
+    case "chat": {
+      const p=s.players.find(x=>x.id===actor); const text=String(a.text||"").replace(/[\u0000-\u001f]/g," ").trim().slice(0,80);
+      if(!p || !text) break;
+      s.chat=(s.chat||[]).concat({id:(s.chatN=(s.chatN||0)+1), by:actor, name:p.name, text}).slice(-40);
+      r=true; break;
+    }
+    case "give": r=doGive(s,actor,Array.isArray(a.cards)?a.cards.map(String):[]); break;
+    case "bomb": r=doBomb(s,actor,Array.isArray(a.ranks)?a.ranks:[]); break;
     case "play": r=doPlay(s,actor,Array.isArray(a.cards)?a.cards.map(String):[]); break;
     case "pass": r=doPass(s,actor); break;
     case "bot": {
       if(!host || s.phase!=="play") break;
       const p=s.players.find(x=>x.id===s.turn); if(!p||!p.bot) break;
+      if(s.pending){ r=botPending(s); break; }
       const mv=botMove(s,p.id);
       r = mv ? doPlay(s,p.id,mv) : (s.field ? doPass(s,p.id) : doPlay(s,p.id,[sortHand(s.hands[p.id],effRev(s))[0]]));
       break;
@@ -550,6 +690,9 @@ function sfx(k){
     case "miyako": [392,330,262,196].forEach((f,i)=>tone(f,.3,"square",.05,i*.12)); break;
     case "turn": tone(1047,.12,"sine",.1); tone(1568,.18,"sine",.08,.1); break;
     case "deal": for(let i=0;i<6;i++) noise(.04,.1,i*.05,2500); break;
+    case "chat": tone(1200,.06,"sine",.06); tone(1600,.08,"sine",.05,.06); break;
+    case "seven": [700,900].forEach((f,i)=>tone(f,.12,"triangle",.08,i*.08)); break;
+    case "bomb": noise(.6,.3,0,80); tone(90,.6,"sawtooth",.12,0,40); break;
     case "win": [523,659,784,1047,784,1047,1319].forEach((f,i)=>tone(f,.3,"triangle",.09,i*.1)); break;
   }
 }
@@ -588,6 +731,10 @@ function playFx(e){
     case "finish": sfx("finish"); confetti(e.id===myId?90:30); banner(`${e.who} ${e.place}位！`,"finish"); if(e.id===myId) vib([40,30,40,30,120]); break;
     case "foul": sfx("foul"); shake(); banner(`${e.who} 反則上がり`,"foul",true); break;
     case "miyako": sfx("miyako"); shake(); banner(`都落ち… ${e.who}`,"miyako",true); break;
+    case "seven": sfx("seven"); banner(e.to===myId?`🎁 ${e.n}枚もらった`:"7渡し","eight",e.to===myId); break;
+    case "bomb": sfx("bomb"); flash(); shake(); vib([80,40,120]); banner(`💣 ${e.ranks} 爆破！`,"rev"); break;
+    case "pending": if(S && S.pending && S.pending.pid===myId){ sfx("turn"); vib(25); } break;
+    case "join": sfx("chat"); break;
     case "round": sfx("deal"); banner(`第${e.n}ラウンド`,"round"); break;
     case "end": if(e.king===myId){ sfx("win"); confetti(140); banner("大富豪！","finish"); } else sfx("pass"); break;
   }
@@ -603,7 +750,7 @@ let myId = sstore.get("dfg_id"); if(!myId){ myId="u"+rid()+rid(); sstore.set("df
 
 let mode=null;       // "online" | "solo"
 let S=null, roomKey="", roomPath="", unsub=null, loadTimer=null;
-let peer=null, conn=null, conns=new Map(), p2pHost=false, p2pTries=0;
+let peer=null, conn=null, conns=new Map(), p2pHost=false;
 let busy=false, lastBotV=-1, screen="entry", errMsg="";
 let sel=new Set();
 let lastFxN=null, lastTurn=null, lastFieldSig="", lastRound=-1;
@@ -625,9 +772,10 @@ function loadScript(src){ return new Promise((res,rej)=>{ const s=document.creat
 setTimeout(()=>{ if(!netChecked){ netChecked=true; if(screen==="entry") render(); } },10500);
 
 const isHost = () => mode==="solo" || (S && S.host===myId);
-const lobbyish = a => ["join","leave","addbot","rm","rules","start","next"].includes(a.t);
+const lobbyish = a => ["join","leave","addbot","rm","rules","start","next","ready"].includes(a.t);
 
 function setState(s){ S=s; render(); driveBots(); }
+window.__dfgDebug = () => S; window.__dfgSet = s => setState(s);
 
 // 自分の操作
 async function act(a){
@@ -680,69 +828,131 @@ async function joinDb(name, pass){
 }
 
 // ---- P2P（自前ホスティング時） ----
+// 合言葉 → peer ID。まず「既にある部屋」につなぎに行き、無ければ自分がホストになる。
+let connStatus="", migrating=false, myName="", roomPeerId="", joinGen=0, clientTries=0;
+const PEER_OPTS = () => ({debug:0, ...(window.__DFG_PEER_OPTS__||{})});
+function setStatus(m){ connStatus=m; if(!S && screen==="room") render(); }
 function hostApply(actor,a){
   const s=clone(S); const r=applyAction(s,actor,a);
   if(r===true){ S=s; broadcast(); render(); driveBots(); }
   else if(typeof r==="string" && actor===myId) toast(r);
   return r;
 }
-function broadcast(){ for(const [pid,c] of conns) if(c.open){ try{ c.send({state:viewFor(S,pid)}); }catch(e){} } }
-function joinP2P(name, pass){
-  const roomId="pdfg-"+hash(normPass(pass));
-  p2pTries=0;
-  const fail = m => { cleanupP2P(); backToEntry(m); };
-  const tryHost = () => {
-    peer = new window.Peer(roomId, {debug:0, ...(window.__DFG_PEER_OPTS__||{})});
-    peer.on("open", ()=>{
-      p2pHost=true; S=blankRoom(myId);
-      hostApply(myId,{t:"join",name});
-    });
-    peer.on("connection", c=>{
-      c.on("data", m=>{
-        if(!m || typeof m!=="object") return;
-        if(m.t==="join"){ c.pid=String(m.id||"").slice(0,40); if(!c.pid) return; const old=conns.get(c.pid); if(old&&old!==c) try{old.close()}catch(e){} conns.set(c.pid,c); }
-        if(!c.pid) return;
-        const r=hostApply(c.pid,m);
-        if(typeof r==="string") c.send({err:r, fatal:m.t==="join"});
-        else if(r===false && m.t==="join") c.send({state:viewFor(S,c.pid)});
-      });
-      c.on("close", ()=>{ if(c.pid && conns.get(c.pid)===c){ conns.delete(c.pid); hostApply(c.pid,{t:"leave"}); } });
-    });
-    peer.on("disconnected", ()=>{ try{ peer.reconnect(); }catch(e){} });
-    peer.on("error", e=>{
-      if(e.type==="unavailable-id"){ try{peer.destroy()}catch(_){} tryClient(); }
-      else if(!S) fail("接続できませんでした（"+e.type+"）");
-      else toast("通信エラー: "+e.type);
-    });
-  };
-  const tryClient = () => {
-    peer = new window.Peer({debug:0, ...(window.__DFG_PEER_OPTS__||{})});
-    peer.on("open", ()=>{
-      conn = peer.connect(roomId, {reliable:true});
-      conn.on("open", ()=>conn.send({t:"join",name,id:myId}));
-      conn.on("data", m=>{
-        if(m && m.state){ S=m.state; render(); }
-        else if(m && m.err){ if(m.fatal) fail(m.err); else toast(m.err); }
-      });
-      conn.on("close", ()=>{ if(mode==="online") fail("ホストとの接続が切れました（ホストが退出したかも）"); });
-    });
-    peer.on("error", e=>{
-      if(e.type==="peer-unavailable" && p2pTries++<2){ try{peer.destroy()}catch(_){} setTimeout(tryHost, 300+Math.random()*700); }
-      else if(!S) fail("接続できませんでした（"+e.type+"）");
-      else toast("通信エラー: "+e.type);
-    });
-  };
-  tryHost();
-  clearTimeout(loadTimer);
-  loadTimer=setTimeout(()=>{ if(!S) fail("接続がタイムアウトしました"); },15000);
+function sendState(c){ if(c.open){ try{ c.send({state:viewFor(S,c.pid)}); }catch(e){} } }
+function broadcast(){ for(const c of conns.values()) sendState(c); }
+function setupHostConn(c){
+  c.on("data", m=>{
+    if(!m || typeof m!=="object" || !S) return;
+    if(m.t==="join"){
+      c.pid=String(m.id||"").slice(0,40); if(!c.pid) return;
+      const old=conns.get(c.pid); conns.set(c.pid,c);
+      if(old && old!==c) try{ old.close(); }catch(e){}
+    }
+    if(!c.pid) return;
+    const r=hostApply(c.pid,m);
+    if(typeof r==="string"){ try{ c.send({err:r, fatal:m.t==="join"}); }catch(e){} }
+    else if(r===false && m.t==="join") sendState(c);
+  });
+  c.on("close", ()=>{ if(c.pid && conns.get(c.pid)===c){ conns.delete(c.pid); if(S) hostApply(c.pid,{t:"leave"}); } });
+  c.on("error", ()=>{});
 }
-function cleanupP2P(){
+function becomeHost(state, gen){
+  setStatus(state ? "ホストを引き継ぎ中…" : "部屋を作成中…");
+  let tries=0;
+  const attempt=()=>{
+    if(gen!==joinGen) return;
+    const p=new window.Peer(roomPeerId, PEER_OPTS()); peer=p;
+    p.on("open", ()=>{
+      if(gen!==joinGen){ try{p.destroy()}catch(e){} return; }
+      p2pHost=true; migrating=false; clearTimeout(loadTimer);
+      if(state){ S=state; render(); driveBots(); toast("ホストを引き継いだよ"); }
+      else { S=blankRoom(myId); hostApply(myId,{t:"join",name:myName}); }
+    });
+    p.on("connection", setupHostConn);
+    p.on("disconnected", ()=>{ try{ p.reconnect(); }catch(e){} });
+    p.on("error", e=>{
+      if(gen!==joinGen) return;
+      if(e.type==="unavailable-id"){
+        try{p.destroy()}catch(_){}
+        if(state){ if(++tries<15) setTimeout(attempt,1000); else failP2P("ホストを引き継げませんでした"); }
+        else startClient(gen);   // 既に部屋がある→そこに入る
+      } else if(!p2pHost){
+        try{p.destroy()}catch(_){}
+        if(++tries<4) setTimeout(attempt,800); else failP2P("接続できませんでした（"+e.type+"）");
+      } else toast("通信エラー: "+e.type);
+    });
+  };
+  attempt();
+}
+function startClient(gen){
+  if(gen!==joinGen) return;
+  setStatus(migrating ? "新しいホストに再接続中…" : "部屋を探してる…");
+  const p=new window.Peer(PEER_OPTS()); peer=p;
+  p.on("open", ()=>connectHost(p,gen));
+  p.on("disconnected", ()=>{ try{ p.reconnect(); }catch(e){} });
+  p.on("error", e=>{
+    if(gen!==joinGen) return;
+    if(e.type==="peer-unavailable"){
+      try{p.destroy()}catch(_){}
+      if(migrating){ if(++clientTries<15) setTimeout(()=>startClient(gen),1000); else failP2P("ホストの引き継ぎに失敗しました"); }
+      else becomeHost(null, gen);                                    // 部屋がまだ無い→自分がホスト
+    } else if(!S){
+      try{p.destroy()}catch(_){}
+      if(++clientTries<4) setTimeout(()=>startClient(gen),800); else failP2P("接続できませんでした（"+e.type+"）");
+    } else toast("通信エラー: "+e.type);
+  });
+}
+function connectHost(p,gen){
+  setStatus(migrating ? "新しいホストに再接続中…" : "部屋に接続中…");
+  const c=p.connect(roomPeerId,{reliable:true}); conn=c;
+  const to=setTimeout(()=>{
+    if(gen!==joinGen || c.open) return;
+    try{c.close()}catch(e){} try{p.destroy()}catch(e){}
+    if(++clientTries<5) startClient(gen); else failP2P("ホストに接続できませんでした");
+  }, 8000);
+  c.on("open", ()=>{ clearTimeout(to); clientTries=0; c.send({t:"join",name:myName,id:myId}); });
+  c.on("data", m=>{
+    if(gen!==joinGen || !m) return;
+    if(m.state){ S=m.state; clearTimeout(loadTimer); render(); }
+    else if(m.err){ if(m.fatal) failP2P(m.err); else toast(m.err); }
+    else if(m.migrate){
+      migrating=true;
+      if(m.migrate===myId && m.full){ const st=m.full; c.__handoff=true; try{c.close()}catch(e){} try{p.destroy()}catch(e){} becomeHost(st,gen); }
+      else toast("ホストが交代中…");
+    }
+  });
+  c.on("close", ()=>{
+    clearTimeout(to);
+    if(gen!==joinGen || mode!=="online" || p2pHost || c.__handoff) return;
+    if(migrating){ try{p.destroy()}catch(e){} clientTries=0; setTimeout(()=>startClient(gen),1200); }
+    else failP2P("ホストとの接続が切れました（ホストが画面を閉じたかも）");
+  });
+  c.on("error", ()=>{});
+}
+function joinP2P(name, pass){
+  myName=name; roomPeerId="pdfg-"+hash(normPass(pass)); clientTries=0; migrating=false;
+  const gen=++joinGen;
+  becomeHost(null, gen);        // ID取得はすぐ成否が返るので、まずホストを試す（部屋があれば即クライアントへ）
   clearTimeout(loadTimer);
+  loadTimer=setTimeout(()=>{ if(!S && gen===joinGen) failP2P("接続がタイムアウトしました"); },30000);
+}
+function failP2P(m){ backToEntry(m); }
+function cleanupP2P(){
+  joinGen++; clearTimeout(loadTimer);
   try{ conn && conn.close(); }catch(e){}
   for(const c of conns.values()) try{ c.close(); }catch(e){}
   conns.clear(); conn=null;
   try{ peer && peer.destroy(); }catch(e){}
-  peer=null; p2pHost=false;
+  peer=null; p2pHost=false; migrating=false;
+}
+// ホストが抜けるときは、残っている人にホストを引き継ぐ
+async function handoffHost(){
+  const s=clone(S);
+  if(applyAction(s,myId,{t:"leave"})!==true) return;
+  const nh=s.host;
+  if(nh===myId || !conns.get(nh) || !conns.get(nh).open) return;
+  for(const [pid,c] of conns){ try{ c.send(pid===nh ? {migrate:nh, full:s} : {migrate:nh}); }catch(e){} }
+  await sleep(500);
 }
 
 // ---- 入退室 ----
@@ -767,7 +977,8 @@ function backToEntry(msg){
 async function leave(){
   if(mode==="online"){
     if(net==="db") await act({t:"leave"});
-    else if(!p2pHost && conn && conn.open) conn.send({t:"leave"});
+    else if(p2pHost) await handoffHost();
+    else if(conn && conn.open){ try{ conn.send({t:"leave"}); }catch(e){} await sleep(150); }
   }
   backToEntry();
 }
@@ -789,14 +1000,17 @@ function driveBots(){
 // =====================================================================
 // 画面
 // =====================================================================
-let menuOpen=false;
+let menuOpen=false, chatOpen=false, lastChatSeen=null, bombSel=new Set();
+const bubbles={};   // pid -> {text, at}
 function render(){
-  if(screen==="entry") return renderEntry();
-  if(!S){ app.innerHTML=`<div class="page"><h1>合言葉大富豪</h1><div class="panel">部屋に接続中…</div><button class="ghost" id="back">やめる</button></div>`; document.getElementById("back").onclick=()=>backToEntry(); return; }
+  if(screen==="entry"){ updateChat(); return renderEntry(); }
+  if(!S){ app.innerHTML=`<div class="page"><h1>合言葉大富豪</h1><div class="panel">${esc(connStatus||"接続中…")}<div class="note" style="margin-top:6px">合言葉: ${esc(roomKey)}</div></div><button class="ghost" id="back">やめる</button></div>`; document.getElementById("back").onclick=()=>backToEntry(); return; }
   document.body.classList.toggle("revmode", S.phase==="play" && effRev(S));
+  collectChat();
   if(S.phase==="lobby") renderLobby();
   else if(S.phase==="result") renderResult();
   else renderGame();
+  updateChat();
   runFx();
 }
 function runFx(){
@@ -805,6 +1019,45 @@ function runFx(){
   if(S.fx.n===lastFxN) return;
   lastFxN=S.fx.n;
   S.fx.k.forEach(playFx);
+}
+
+// ---------- チャット ----------
+const STAMPS=["よろしく！","ナイス！","うわー😱","はやく〜","ドンマイ","つよ…","GG👏"];
+function collectChat(){
+  const list=(S&&S.chat)||[];
+  const last=list.length?list[list.length-1].id:0;
+  if(lastChatSeen===null){ lastChatSeen=last; return; }
+  for(const m of list) if(m.id>lastChatSeen){
+    bubbles[m.by]={text:m.text, at:Date.now()};
+    if(m.by!==myId){ sfx("chat"); if(!chatOpen) unread++; }
+  }
+  lastChatSeen=Math.max(lastChatSeen,last);
+}
+let unread=0;
+function chatBtn(cls="round"){ return `<button class="${cls}" id="chatBtn" title="チャット">💬${unread?`<span class="dot">${unread>9?"9+":unread}</span>`:""}</button>`; }
+function bindChatBtn(){ const b=document.getElementById("chatBtn"); if(b) b.onclick=()=>{ chatOpen=true; unread=0; updateChat(); const i=document.getElementById("chatIn"); if(i) setTimeout(()=>i.focus(),50); const d=b.querySelector(".dot"); if(d) d.remove(); }; }
+function updateChat(){
+  const box=document.getElementById("chat");
+  const show = chatOpen && S && screen==="room";
+  box.hidden=!show;
+  if(!show) return;
+  const msgs=document.getElementById("msgs");
+  const list=S.chat||[];
+  msgs.innerHTML = list.length ? list.map(m=>`<div class="msg ${m.by===myId?"mine":""}"><b>${esc(m.name)}</b><span>${esc(m.text)}</span></div>`).join("") : `<div class="note">まだメッセージはないよ</div>`;
+  msgs.scrollTop=msgs.scrollHeight;
+}
+function sendChat(text){ text=String(text||"").trim(); if(!text) return; act({t:"chat",text}); }
+(function initChat(){
+  document.getElementById("stamps").innerHTML=STAMPS.map(t=>`<button class="small ghost" data-stamp="${esc(t)}">${esc(t)}</button>`).join("");
+  document.getElementById("stamps").onclick=e=>{ const b=e.target.closest("[data-stamp]"); if(b) sendChat(b.dataset.stamp); };
+  document.getElementById("chatForm").onsubmit=e=>{ e.preventDefault(); const i=document.getElementById("chatIn"); sendChat(i.value); i.value=""; };
+  document.getElementById("chatClose").onclick=()=>{ chatOpen=false; updateChat(); };
+  document.getElementById("chat").onclick=e=>{ if(e.target.id==="chat"){ chatOpen=false; updateChat(); } };
+})();
+function bubbleHtml(pid){
+  const b=bubbles[pid]; if(!b) return "";
+  const el=Date.now()-b.at; if(el>4500) return "";
+  return `<div class="bubble" style="animation-delay:-${el}ms">${esc(b.text)}</div>`;
 }
 
 function cardEl(c,cls="",style=""){
@@ -830,7 +1083,7 @@ function renderEntry(){
   let hashPass=""; try{ hashPass = !inArtifact && location.hash.length>1 ? decodeURIComponent(location.hash.slice(1)) : ""; }catch(e){}
   const netMsg = !netChecked ? "接続確認中…" : !net ? "オンライン機能が使えない環境です（ひとりモードは遊べる）" : "";
   const howto = net==="p2p"
-    ? "このページのURLと合言葉を送るだけで友達が入れる（入室後の「招待」ボタンなら合言葉入りリンク）。最初に入った人がホストになるので、ホストは画面を閉じないでね。"
+    ? `このページのURLと合言葉を送るだけで友達が入れる（最大${MAX_PLAYERS}人・ゲーム中でも途中参加OK）。最初に入った人がホストになって、ホストが「退出」すると他の人に自動で引き継がれるよ。`
     : inArtifact ? "Claude上で遊ぶ場合、友達はこのページに編集者として招待されている必要があるよ。" : "";
   app.innerHTML=`<div class="page">
     <div class="row"><h1 class="grow">🃏 合言葉大富豪</h1>${soundBtn()}</div>
@@ -840,7 +1093,7 @@ function renderEntry(){
       <label>合言葉</label><input id="pw" maxlength="30" value="${esc(hashPass)}" placeholder="例: いがりんご" autocomplete="off">
       <div class="btnrow"><button id="go" ${net?"":"disabled"}>部屋に入る</button></div>
       <div class="err" id="err">${esc(errMsg||netMsg)}</div>
-      <div class="btnrow" style="margin-top:4px"><button class="ghost" id="solo">CPU 3人とひとりで遊ぶ</button></div>
+      <div class="btnrow" style="margin-top:4px"><button class="ghost" id="solo">CPUとひとりで遊ぶ</button></div>
       ${howto?`<div class="note" style="margin-top:10px">${howto}</div>`:""}
     </div></div>`;
   errMsg="";
@@ -860,10 +1113,14 @@ function playerChips(){
   const host=isHost();
   return `<div class="players">${S.players.map(p=>{
     const title=S.titles&&S.titles[p.id];
-    const meta = p.bot ? (p.away?"不在（CPU）":"CPU") : "";
+    let meta;
+    if(p.bot) meta = p.away?"不在（CPU）":"CPU";
+    else if(p.id===S.host) meta = mode==="online" ? "👑 ホスト" : "";
+    else meta = p.ready ? `<span class="ok">✅ 準備OK</span>` : "準備中…";
     const rm = host && S.phase!=="play" && p.id!==myId ? `<button class="small ghost" data-rm="${p.id}" style="margin-top:4px">外す</button>` : "";
-    return `<div class="pl ${p.id===myId?"me":""}">
-      <div class="nm">${esc(p.name)}${p.id===S.host&&mode==="online"?'<span class="badge">ホスト</span>':""}${title?`<span class="badge ${title==="大富豪"?"gold":title==="大貧民"?"bad":""}">${title}</span>`:""}</div>
+    return `<div class="pl ${p.id===myId?"me":""} ${p.ready?"ready":""}">
+      ${bubbleHtml(p.id)}
+      <div class="nm">${esc(p.name)}${title?`<span class="badge ${title==="大富豪"?"gold":title==="大貧民"?"bad":""}">${title}</span>`:""}</div>
       <div class="meta">${meta}</div>${rm}</div>`;
   }).join("")}</div>`;
 }
@@ -898,28 +1155,50 @@ function bindInvite(){
     try{ await navigator.clipboard.writeText(text); toast("コピーした！"); }catch(e){ toast(url); }
   };
 }
+function chatPreview(){
+  const list=(S.chat||[]).slice(-3);
+  return `<div class="panel chatprev" id="chatPrev"><div class="row"><b class="grow">💬 チャット</b><span class="note">タップで開く</span></div>
+    ${list.length?list.map(m=>`<div class="note"><b>${esc(m.name)}</b>: ${esc(m.text)}</div>`).join(""):`<div class="note">「よろしく！」って送ってみよう</div>`}</div>`;
+}
+// 準備OK / 開始ボタン
+function startControls(isNext){
+  const host=isHost(), n=S.players.length, me=S.players.find(p=>p.id===myId);
+  const humans=S.players.filter(p=>!p.bot && p.id!==S.host);
+  const readyN=humans.filter(p=>p.ready).length, allReady=readyN===humans.length;
+  if(host){
+    const label = isNext ? "次のラウンドへ" : `ゲーム開始（${n}人）`;
+    return `<div class="btnrow"><button class="ghost" id="addbot" ${n>=MAX_PLAYERS?"disabled":""}>＋ CPU</button>
+      <button id="start" ${n<2||!allReady?"disabled":""}>${allReady?label:`準備待ち ${readyN}/${humans.length}`}</button></div>
+      ${!allReady&&n>=2?`<div style="text-align:right;margin-top:6px"><button class="small ghost" id="force">待たずに開始</button></div>`:""}`;
+  }
+  if(!me) return `<div class="hint" style="margin-top:12px">入室できませんでした</div>`;
+  return `<div class="btnrow"><button id="ready" class="${me.ready?"ghost":""}">${me.ready?"✅ 準備OK（取り消す）":"準備OK！"}</button></div>
+    <div class="hint" style="margin-top:6px">${me.ready?"ホストの開始を待ってます…":"準備できたら押してね"}</div>`;
+}
+function bindStart(isNext){
+  const t=isNext?"next":"start";
+  const g=id=>document.getElementById(id);
+  if(g("addbot")) g("addbot").onclick=()=>act({t:"addbot"});
+  if(g("start")) g("start").onclick=()=>act({t});
+  if(g("force")) g("force").onclick=()=>act({t,force:true});
+  if(g("ready")) g("ready").onclick=()=>{ const me=S.players.find(p=>p.id===myId); act({t:"ready",v:!(me&&me.ready)}); sfx("tap"); };
+  const cp=g("chatPrev"); if(cp) cp.onclick=()=>{ chatOpen=true; unread=0; updateChat(); };
+}
 
 function renderLobby(){
-  const host=isHost(), n=S.players.length, me=S.players.some(p=>p.id===myId);
   app.innerHTML=`<div class="page">
-    <div class="row"><h1 class="grow">ロビー</h1>${soundBtn()}</div>
+    <div class="row"><h1 class="grow">ロビー</h1>${chatBtn("small ghost")}${soundBtn()}</div>
     <div class="sub">合言葉 <span class="code">${esc(roomKey)}</span> ${inviteBtn()}</div>
-    <div class="panel">${playerChips()}
-      ${host?`<div class="btnrow"><button class="ghost" id="addbot" ${n>=6?"disabled":""}>＋ CPU追加</button><button id="start" ${n<2?"disabled":""}>ゲーム開始（${n}人）</button></div>`
-            :`<div class="hint" style="margin-top:12px">${me?"ホストの開始を待ってます…":"入室できませんでした"}</div>`}
-    </div>
+    <div class="panel"><div class="note" style="margin-bottom:6px">${S.players.length}/${MAX_PLAYERS}人</div>${playerChips()}${startControls(false)}</div>
+    ${mode==="online"?chatPreview():""}
     ${rulesPanel()}
     <div class="panel"><div class="note">${S.log.slice(-5).map(esc).join("<br>")}</div></div>
     <button class="ghost" id="leave">退出</button></div>`;
-  bindChips(); bindRules(); bindSound(); bindInvite();
+  bindChips(); bindRules(); bindSound(); bindInvite(); bindStart(false); bindChatBtn();
   document.getElementById("leave").onclick=leave;
-  if(host){
-    document.getElementById("addbot").onclick=()=>act({t:"addbot"});
-    document.getElementById("start").onclick=()=>act({t:"start"});
-  }
 }
 
-// 自分から見た席順で相手を並べる
+// ---------- 卓 ----------
 const SEAT_POS={
   1:[[50,13]],
   2:[[25,18],[75,18]],
@@ -927,7 +1206,13 @@ const SEAT_POS={
   4:[[13,31],[34,14],[66,14],[87,31]],
   5:[[13,35],[27,16],[50,12.5],[73,16],[87,35]],
 };
-function seatHtml(p,x,y){
+function seatPos(k){
+  if(SEAT_POS[k]) return SEAT_POS[k];
+  const out=[];
+  for(let i=0;i<k;i++){ const t=i/(k-1), ang=Math.PI*(1-t); out.push([50+39*Math.cos(ang), 40-28*Math.sin(ang)]); }
+  return out;
+}
+function seatHtml(p,x,y,small){
   const fin=S.finished.indexOf(p.id), lost=S.losers.includes(p.id);
   const cnt = S.counts && S.counts[p.id]!==undefined ? S.counts[p.id] : (S.hands[p.id]||[]).length;
   const k=Math.min(cnt,13), spread=Math.min(110,k*9);
@@ -935,17 +1220,19 @@ function seatHtml(p,x,y){
   let stat;
   if(fin>=0) stat=`<span class="sstat win">${fin+1}位 上がり</span>`;
   else if(lost) stat=`<span class="sstat lose">最下位</span>`;
+  else if(S.pending && S.pending.pid===p.id) stat=`<span class="sstat think">${S.pending.type==="seven"?"🎁 選択中":"💣 選択中"}</span>`;
   else if(S.passed.includes(p.id)) stat=`<span class="sstat pass">パス · ${cnt}枚</span>`;
   else stat=`<span class="sstat">${cnt}枚</span>`;
   const title=S.titles&&S.titles[p.id];
   const tobot = isHost() && mode==="online" && !p.bot && fin<0 && !lost ? `<button class="small ghost" data-bot="${p.id}" style="margin-top:3px;padding:3px 6px;font-size:10px">CPU交代</button>` : "";
-  return `<div class="seat ${S.turn===p.id?"turn":""} ${fin>=0||lost?"out":""}" style="left:${x}%;top:${y}%">
-    <div class="plate">${esc(p.name)}</div>
+  const talk = bubbles[p.id] && Date.now()-bubbles[p.id].at<4500;
+  return `<div class="seat ${small?(S.order.length>=9?"xs":"sm"):""} ${talk?"talk":""} ${S.turn===p.id?"turn":""} ${fin>=0||lost?"out":""}" style="left:${x}%;top:${y}%">
+    ${bubbleHtml(p.id)}
+    <div class="plate">${p.away?"💤":""}${esc(p.name)}</div>
     <div class="avawrap"><div class="fan">${backs}</div>${avatar(p)}${title?`<span class="title ${title==="大富豪"?"gold":""}">${title}</span>`:""}</div>
     ${stat}${tobot}</div>`;
 }
 
-let handCache=[];
 function layoutHand(){
   const el=document.getElementById("hand"); if(!el) return;
   const cards=[...el.querySelectorAll(".card")];
@@ -957,11 +1244,11 @@ function layoutHand(){
   let maxBottom=0;
   rows.forEach((row,ri)=>{
     const m=row.length, base = 26 + ri*rowGap;
-    const spread = Math.min(28, m*2.4);               // 全体の傾き幅（度）
+    const spread = Math.min(28, m*2.4);
     const half = spread/2*Math.PI/180;
-    const margin = 6 + ch*Math.sin(half);             // 端のカードが傾いてもはみ出さない余白
+    const margin = 6 + ch*Math.sin(half);
     const step = m>1 ? Math.min(cw*.7, (W-2*margin-cw)/(m-1)) : 0;
-    const drop = 22*(spread/28);                       // 端がどれだけ下がるか
+    const drop = 22*(spread/28);
     row.forEach((c,i)=>{
       const t = m>1 ? i/(m-1)-.5 : 0;
       const x = W/2 + (i-(m-1)/2)*step - cw/2;
@@ -975,48 +1262,67 @@ function layoutHand(){
   });
   el.style.height = (maxBottom + 10) + "px";
 }
-window.addEventListener("resize", layoutHand);
+window.addEventListener("resize", ()=>{ layoutHand(); placeBar(); });
+function placeBar(){ const hand=document.getElementById("hand"), bar=document.getElementById("mebar"); if(hand && bar) bar.style.bottom=(hand.offsetHeight+4)+"px"; }
+
+// 自分の操作ボタンの状態
+function controls(){
+  const myTurn=S.turn===myId, P=S.pending, cs=[...sel];
+  const c={hint:"", label:"出す", enabled:false, pass:false, kind:"play", dim:null};
+  if(P && P.pid===myId){
+    if(P.type==="seven"){
+      c.kind="give"; c.label=`🎁 渡す（${cs.length}/${P.n}）`; c.enabled=cs.length===P.n;
+      c.hint=`7渡し: ${esc(nameOf(S,P.to))} に渡すカードを${P.n}枚選んで`;
+    } else {
+      c.kind="bomb"; c.label=`💣 爆破（${bombSel.size}/${P.n}）`; c.enabled=bombSel.size===P.n;
+      c.hint=`12ボンバー: 全員から消す数字を${P.n}つ選んで`;
+    }
+    return c;
+  }
+  if(P){ c.hint=`${esc(nameOf(S,P.pid))} が${P.type==="seven"?"7渡し":"12ボンバー"}を選んでる…`; return c; }
+  if(!myTurn){ c.hint=`${esc(nameOf(S,S.turn))} の番…`; return c; }
+  const playable=new Set(); candidates(S,myId).forEach(cb=>cb.forEach(x=>playable.add(x)));
+  c.dim=playable; c.pass=!!S.field;
+  if(cs.length){ const e=canPlay(S,myId,cs); c.enabled=!e; c.hint=e||"これで出せる！"; c.label=`出す（${cs.length}）`; }
+  else c.hint = S.field ? (playable.size?"明るいカードが出せるよ":"出せるカードがない…パスしよう") : "親！好きなカードを出そう";
+  return c;
+}
 
 function renderGame(){
   const rev=effRev(S);
   const myHand = sortHand(S.hands[myId]||[], rev);
   const myTurn = S.turn===myId;
   const meP = S.players.find(p=>p.id===myId);
-  const amIn = meP && !meP.away;
+  const amIn = meP && !meP.away && S.order.includes(myId);
   [...sel].forEach(c=>{ if(!myHand.includes(c)) sel.delete(c); });
-  const selCards=[...sel];
-  const err = selCards.length ? canPlay(S,myId,selCards) : "x";
-  const ok = myTurn && !err;
-  let playable=null;
-  if(myTurn){ playable=new Set(); candidates(S,myId).forEach(cb=>cb.forEach(c=>playable.add(c))); }
-  let hint="";
-  if(myTurn && selCards.length && err) hint=err;
-  else if(myTurn && !selCards.length) hint = S.field ? (playable.size?"明るいカードが出せるよ":"出せるカードがない…パスしよう") : "親！好きなカードを出そう";
-  else if(!myTurn) hint = `${esc(nameOf(S,S.turn))} の番…`;
+  if(!(S.pending && S.pending.pid===myId && S.pending.type==="bomb")) bombSel.clear();
+  const C=controls();
   const f=S.field;
   const fsig = f ? f.cards.join()+f.by : "";
   const newField = fsig && fsig!==lastFieldSig; lastFieldSig=fsig;
   const newRound = S.round!==lastRound; lastRound=S.round;
-  if(myTurn && lastTurn!==myId){ setTimeout(()=>{ sfx("turn"); vib(25); },150); }
+  const myMoment = myTurn && (!S.pending || S.pending.pid===myId);
+  if(myMoment && lastTurn!==myId){ setTimeout(()=>{ sfx("turn"); vib(25); },150); }
   lastTurn=S.turn;
 
-  // 席順（自分の次の人から）
-  const ord=S.order.length?S.order:S.players.map(p=>p.id);
+  const ord=S.order;
   const mi=ord.indexOf(myId);
   const others = mi>=0 ? ord.slice(mi+1).concat(ord.slice(0,mi)) : ord.slice();
-  const pos = SEAT_POS[Math.min(others.length,5)] || [];
-  const seats = others.slice(0,5).map((id,i)=>{ const p=S.players.find(x=>x.id===id); return p?seatHtml(p,pos[i][0],pos[i][1]):""; }).join("");
+  const pos = seatPos(others.length), small = others.length>5;
+  const seats = others.map((id,i)=>{ const p=S.players.find(x=>x.id===id); return p?seatHtml(p,pos[i][0],pos[i][1],small):""; }).join("");
 
   const fin=S.finished.indexOf(myId), lost=S.losers.includes(myId);
   const tags = [rev?`<span class="tag">${S.rev?"革命中":"逆転中"}</span>`:"", S.eb?`<span class="tag eb">11バック</span>`:"", S.lock?`<span class="tag lock">縛り ${S.lock.map(x=>SUIT_SYM[x]).join("")}</span>`:""].join("");
   const lastLogs = S.log.slice(-2);
   const myTitle = S.titles && S.titles[myId];
-  const fieldTop = others.length>=4 ? 47 : 42;
+  const fieldTop = others.length>5 ? 50 : others.length>=4 ? 47 : 42;
+  const watchers = S.players.filter(p=>!S.order.includes(p.id));
+  const bombPicker = C.kind==="bomb" ? `<div class="bombpick">${[3,4,5,6,7,8,9,10,11,12,13,14,15,16].map(r=>`<button class="${bombSel.has(r)?"on":""}" data-rank="${r}">${r===16?"🃏":RANK_LABEL(r)}</button>`).join("")}</div>` : "";
   app.innerHTML=`
   <div class="table">
     <div class="tbar">
-      <div class="ticker"><div class="rd">第${S.round}ラウンド · ${esc(roomKey)}</div>${lastLogs.map(l=>`<div>${esc(l)}</div>`).join("")}</div>
-      ${soundBtn("round")}<button class="round" id="menu">≡</button>
+      <div class="ticker"><div class="rd">第${S.round}ラウンド · ${esc(roomKey)}${watchers.length?` · 観戦${watchers.length}`:""}</div>${lastLogs.map(l=>`<div>${esc(l)}</div>`).join("")}</div>
+      ${mode==="online"?chatBtn():""}${soundBtn("round")}<button class="round" id="menu">≡</button>
     </div>
     ${seats}
     <div class="field" style="top:${fieldTop}%">
@@ -1026,42 +1332,58 @@ function renderGame(){
     </div>
     ${amIn?`
     <div class="mebar" id="mebar">
+      ${bubbleHtml(myId)}
       <div class="meinfo">
-        <div class="plate" style="${myTurn?"background:linear-gradient(#ffe08a,#f5b52e);color:#3a2600":""}">${esc(meP.name)}${myTitle?` · ${myTitle}`:""}</div>
+        <div class="plate" style="${myMoment?"background:linear-gradient(#ffe08a,#f5b52e);color:#3a2600":""}">${esc(meP.name)}${myTitle?` · ${myTitle}`:""}</div>
         <span class="sstat ${fin>=0?"win":lost?"lose":""}">${fin>=0?`${fin+1}位 上がり！`:lost?"最下位…":`${myHand.length}枚`}</span>
       </div>
       <div class="mebtns">
-        <div class="hint">${hint}</div>
-        <div class="bb"><button class="passbtn" id="pass" ${myTurn&&f?"":"disabled"}>パス</button><button id="play" ${ok?"":"disabled"}>出す${selCards.length?`（${selCards.length}）`:""}</button></div>
+        ${bombPicker}
+        <div class="hint" id="hint">${C.hint}</div>
+        <div class="bb">${C.kind==="play"?`<button class="passbtn" id="pass" ${C.pass?"":"disabled"}>パス</button>`:""}<button id="play" ${C.enabled?"":"disabled"}>${C.label}</button></div>
       </div>
     </div>
-    <div class="hand ${myTurn?"myturn":""}" id="hand">${myHand.map((c,i)=>cardEl(c,(sel.has(c)?"sel ":"")+(playable&&!playable.has(c)?"dim ":"")+(newRound?"deal":""),newRound?`animation-delay:${i*40}ms`:"")).join("")}</div>`
-    :`<div class="mebar" style="bottom:30px"><div class="hint" style="flex:1">観戦中</div></div>`}
+    <div class="hand ${myMoment?"myturn":""}" id="hand">${myHand.map((c,i)=>cardEl(c,(sel.has(c)?"sel ":"")+(C.dim&&!C.dim.has(c)?"dim ":"")+(newRound?"deal":""),newRound?`animation-delay:${i*40}ms`:"")).join("")}</div>`
+    :`<div class="mebar" style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次のラウンドから参加）":""}</div></div>`}
   </div>
   ${menuOpen?menuHtml():""}`;
-  // 手札とバーの位置
-  layoutHand();
-  const hand=document.getElementById("hand"), bar=document.getElementById("mebar");
-  if(hand && bar) bar.style.bottom = (hand.offsetHeight + 4) + "px";
-  bindChips(); bindSound(); bindMenu();
+  layoutHand(); placeBar();
+  bindChips(); bindSound(); bindMenu(); bindChatBtn();
   if(!amIn) return;
+  const hand=document.getElementById("hand");
   hand.onclick=e=>{
     const el=e.target.closest(".card"); if(!el) return;
-    const c=el.dataset.c; sel.has(c)?sel.delete(c):sel.add(c); el.classList.toggle("sel",sel.has(c)); el.classList.remove("deal"); sfx("tap");
+    const P=S.pending;
+    if(P && P.pid===myId && P.type==="bomb") return;
+    const c=el.dataset.c;
+    if(sel.has(c)) sel.delete(c);
+    else { if(P && P.type==="seven" && P.pid===myId && sel.size>=P.n) return toast(`${P.n}枚まで`); sel.add(c); }
+    el.classList.toggle("sel",sel.has(c)); el.classList.remove("deal"); sfx("tap");
     layoutHand();
-    const cs=[...sel], e2=cs.length?canPlay(S,myId,cs):"x", pb=document.getElementById("play"), hn=document.querySelector(".mebtns .hint");
-    pb.disabled = !(myTurn && !e2); pb.textContent = "出す"+(cs.length?`（${cs.length}）`:"");
-    if(myTurn) hn.textContent = cs.length&&e2 ? e2 : cs.length ? "これで出せる！" : hint;
+    const K=controls(), pb=document.getElementById("play");
+    pb.disabled=!K.enabled; pb.textContent=K.label; document.getElementById("hint").innerHTML=K.hint;
   };
-  document.getElementById("play").onclick=()=>{ const cards=[...sel]; sel.clear(); act({t:"play",cards}); };
-  document.getElementById("pass").onclick=()=>{ sel.clear(); act({t:"pass"}); };
+  app.querySelectorAll("[data-rank]").forEach(b=>b.onclick=()=>{
+    const r=+b.dataset.rank, P=S.pending;
+    if(bombSel.has(r)) bombSel.delete(r); else { if(bombSel.size>=P.n) return toast(`${P.n}つまで`); bombSel.add(r); }
+    sfx("tap"); renderGame();
+  });
+  document.getElementById("play").onclick=()=>{
+    const K=controls();
+    if(K.kind==="give"){ const cards=[...sel]; sel.clear(); act({t:"give",cards}); }
+    else if(K.kind==="bomb"){ const ranks=[...bombSel]; bombSel.clear(); act({t:"bomb",ranks}); }
+    else { const cards=[...sel]; sel.clear(); act({t:"play",cards}); }
+  };
+  const ps=document.getElementById("pass"); if(ps) ps.onclick=()=>{ sel.clear(); act({t:"pass"}); };
 }
 function menuHtml(){
   const on = RULE_DEFS.filter(d=>S.rules[d.k]).map(d=>d.name).concat([`ジョーカー${S.rules.jokers}枚`]);
+  const watchers = S.players.filter(p=>!S.order.includes(p.id));
   return `<div class="sheet" id="sheet"><div class="inner">
     <div class="row"><b class="grow">メニュー</b><button class="small ghost" id="closeMenu">閉じる</button></div>
     <div class="note" style="margin:10px 0">合言葉: <b>${esc(roomKey)}</b> ${inviteBtn()}</div>
     <div class="note"><b>このルール:</b> ${on.join(" / ")}</div>
+    ${watchers.length?`<div class="note" style="margin-top:6px"><b>観戦中:</b> ${watchers.map(p=>esc(p.name)).join("、")}（次のラウンドから参加）</div>`:""}
     <div class="note" style="margin-top:10px"><b>ログ</b><br>${S.log.map(esc).join("<br>")}</div>
     <div class="btnrow"><button class="ghost" id="leave">退出する（CPUが代わりに打つ）</button></div>
   </div></div>`;
@@ -1077,22 +1399,16 @@ function bindMenu(){
 
 function renderResult(){
   menuOpen=false;
-  const host=isHost();
   app.innerHTML=`<div class="page">
-    <div class="row"><h1 class="grow">第${S.round}ラウンド 結果</h1>${soundBtn()}</div>
+    <div class="row"><h1 class="grow">第${S.round}ラウンド 結果</h1>${chatBtn("small ghost")}${soundBtn()}</div>
     <div class="sub">合言葉 <span class="code" style="font-size:15px">${esc(roomKey)}</span> ${inviteBtn()}</div>
     <div class="panel"><ol class="rank">${S.ranking.map(id=>`<li><b>${esc(nameOf(S,id))}</b> <span class="badge ${S.titles[id]==="大富豪"?"gold":S.titles[id]==="大貧民"?"bad":""}">${S.titles[id]}</span>${id===myId?" ← あなた":""}</li>`).join("")}</ol></div>
-    ${host?`<div class="btnrow"><button class="ghost" id="addbot" ${S.players.length>=6?"disabled":""}>＋ CPU追加</button><button id="next">次のラウンドへ</button></div>`
-          :`<div class="hint">ホストが次のラウンドを始めるのを待ってます…</div>`}
-    <div class="panel" style="margin-top:12px">${playerChips()}</div>
+    <div class="panel">${playerChips()}${startControls(true)}</div>
+    ${mode==="online"?chatPreview():""}
     ${rulesPanel()}
     <button class="ghost" id="leave">退出</button></div>`;
-  bindChips(); bindRules(); bindSound(); bindInvite();
+  bindChips(); bindRules(); bindSound(); bindInvite(); bindStart(true); bindChatBtn();
   document.getElementById("leave").onclick=leave;
-  if(host){
-    document.getElementById("next").onclick=()=>act({t:"next"});
-    document.getElementById("addbot").onclick=()=>act({t:"addbot"});
-  }
 }
 
 render();
