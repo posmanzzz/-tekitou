@@ -258,6 +258,18 @@ body.lockmode .table::before{border:7px dashed #cfd6dc;box-shadow:inset 0 0 0 3p
 @keyframes hueSpin{to{filter:hue-rotate(360deg)}}
 .k-reach{--b1:#ff1a3a;--b2:#3a0008;--lc:rgba(255,80,100,.55)}
 .k-win .band{animation-name:ciBand,hueSpin;animation-duration:var(--d,1.3s),2.5s;animation-iteration-count:1,infinite}
+
+/* ===== パチンコ風漢字 ===== */
+.kanji{position:fixed;z-index:20;pointer-events:none;font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;font-weight:900;line-height:1;white-space:nowrap;letter-spacing:-.02em}
+.kanji span{position:relative;display:block;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-stroke:0;filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 3px #fff) drop-shadow(0 0 1px #000) drop-shadow(4px 6px 0 rgba(0,0,0,.65)) drop-shadow(0 0 18px var(--glow))}
+.kanji .kback{position:absolute;left:50%;top:50%;width:260%;height:260%;transform:translate(-50%,-50%);background:radial-gradient(circle,var(--glow) 0%,transparent 60%);opacity:.55;z-index:-1}
+.kanji.k-red{--glow:#ff1a1a}.kanji.k-red span{background-image:linear-gradient(180deg,#fff 0%,#ffd0d0 18%,#ff2a2a 45%,#a00000 70%,#ff6a3a 100%)}
+.kanji.k-gold{--glow:#ffc400}.kanji.k-gold span{background-image:linear-gradient(180deg,#fffbe0 0%,#ffe066 25%,#e0a000 50%,#fff2a8 62%,#b07800 100%)}
+.kanji.k-blue{--glow:#2ab0ff}.kanji.k-blue span{background-image:linear-gradient(180deg,#fff 0%,#c8f0ff 25%,#22a0ff 55%,#06308a 100%)}
+.kanji.k-green{--glow:#22e07a}.kanji.k-green span{background-image:linear-gradient(180deg,#fff 0%,#c8ffe0 25%,#10b860 55%,#04401e 100%)}
+.kanji.k-dark{--glow:#8a00ff}.kanji.k-dark span{background-image:linear-gradient(180deg,#e8e8e8 0%,#888 40%,#222 70%,#555 100%)}
+.kanji.k-rainbow{--glow:#ff00c8}.kanji.k-rainbow span{background-image:linear-gradient(90deg,#ff004c,#ffb700,#fff200,#44ff00,#00e5ff,#7a00ff,#ff00c8,#ff004c);background-size:200% 100%;animation:kRain .6s linear infinite}
+@keyframes kRain{to{background-position:200% 0}}
 </style>
 </head>
 <body>
@@ -803,6 +815,7 @@ function sfx(k){
     case "fanfare": [[523,0],[659,.12],[784,.24],[1047,.36],[784,.52],[1047,.62],[1319,.74]].forEach(([f,t])=>{ tone(f,.32,"square",.05,t); tone(f/2,.32,"triangle",.06,t); }); break;
     case "kyuin": tone(600,.7,"sawtooth",.07,0,3800); tone(1200,.7,"square",.035,.05,5200); tone(2400,.5,"sine",.05,.25,4800); break;
     case "alarm": for(let i=0;i<4;i++){ tone(i%2?660:990,.13,"square",.06,i*.15); } break;
+    case "don": tone(110,.25,"square",.12,0,55); tone(220,.18,"sawtooth",.06); noise(.12,.18,0,300); break;
     case "thud": tone(70,.35,"sine",.25,0,40); noise(.15,.25,0,600); break;
     case "pop": noise(.12,.12,0,2000); tone(900+Math.random()*600,.15,"sine",.05); break;
     case "win": [523,659,784,1047,784,1047,1319].forEach((f,i)=>tone(f,.3,"triangle",.09,i*.1)); break;
@@ -935,6 +948,7 @@ function passFlyBacks(from,to,n){
 function myTurnFx(){
   sfx("turn"); vib([30,40,30]);
   banner("あなたの番！","myturn",false,true);
+  if(dopa() && S){ const hs=(S.hands[myId]||[]).map(c=>parse(c).r), strong=hs.filter(r=>r>=14).length; if(strong>=3) kanji("好機","gold",100,.32); }
   if(dopa()){ const h=document.getElementById("hand"); if(h){ const r=h.getBoundingClientRect(); burst(r.left+r.width/2,r.top+20,{n:16,emoji:"✨",size:6,dist:120,gravity:-10}); } }
   const cards=[...document.querySelectorAll("#hand .card:not(.dim)")];
   cards.forEach((c,i)=>anim(c,[{translate:"0 0"},{translate:"0 -16px"},{translate:"0 0"}],{duration:380,delay:i*35,easing:"ease-out"}));
@@ -948,7 +962,7 @@ const dopa = () => fxLevel>=2;
 let comboN=0;
 // マンガの擬音
 function onoma(text, x, y, color="#fff", size=54, rot){
-  if(fxLevel<1) return;
+  return;   // 擬音は無し
   const t=document.createElement("div"); t.className="onoma"; t.textContent=text;
   t.style.cssText=`left:${x}px;top:${y}px;color:${color};font-size:${size}px`;
   const r=rot ?? (Math.random()*30-15);
@@ -1014,8 +1028,9 @@ function playDopa(e){
   comboN++;
   setTimeout(()=>{
     // 擬音
-    if(joker){ onoma("ドギャーン!!",p.x,p.y-150,"#e9b8ff",52,-8); }
-    else if(n>=4) onoma("ズドドドン!!",p.x+20,p.y-130,"#ffd54a",50);
+    if(joker) kanji("超激熱","rainbow");
+    else if(n>=4) kanji("激熱","red");
+    else if(two || n>=3) kanji("熱","red",130,.28);
     if(joker){ hitStop(2); rgbSplit(); rainbowStrobe(1100); cutin("joker","🃏 JOKER降臨","最強のカードが出た！",1100); coinFountain(p.x,p.y,30); }
     else if(two || n>=3){ hitStop(1.4); rgbSplit(300); coinFountain(p.x,p.y,n>=3?20:14); }
     if(mine){
@@ -1023,13 +1038,37 @@ function playDopa(e){
       else if(n>=2||two) praise("GREAT!");
       else if(rs[0]>=13) praise("NICE!");
     }
-    if(comboN>=3 && dopa()) floatCombo(comboN);
+    if(comboN>=3 && dopa()) kanji(`${comboN}連`,"gold",comboN>=5?110:84,.66);
     // リーチ（残り1枚）
     const left = S && S.counts ? S.counts[e.id] : undefined;
     if(left===1 && S && !S.finished.includes(e.id)){
-      sfx("alarm"); alarmFrame(); cutin("reach", mine?"🔥 リーチ！":"⚠ リーチ！", mine?"あと1枚で上がり！":`${nameOf(S,e.id)} があと1枚！`, 1100);
+      sfx("alarm"); alarmFrame(); kanji("激アツ","red",undefined,.28,300); cutin("reach", mine?"🔥 リーチ！":"⚠ リーチ！", mine?"あと1枚で上がり！":`${nameOf(S,e.id)} があと1枚！`, 1100);
     }
   }, 380);
+}
+
+// パチンコ風の漢字演出（演出レベル2のみ）。tone: red / gold / rainbow / blue / green / dark
+let kanjiBusyUntil=0;
+function kanji(text, tone="red", size, yRatio=.3, delay=0){
+  if(!dopa()) return;
+  const now=Date.now(); const start=Math.max(now+delay, kanjiBusyUntil); kanjiBusyUntil=start+650;
+  setTimeout(()=>{
+    const len=[...text].length;
+    const fs=size || Math.min(len===1?170:len<=2?120:len<=3?96:78, Math.floor(Math.min(innerWidth,560)*.86/len));
+    const w=document.createElement("div"); w.className="kanji k-"+tone;
+    w.style.cssText=`left:50%;top:${innerHeight*yRatio}px;font-size:${fs}px`;
+    w.innerHTML=`<i class="kback"></i><span data-t="${esc(text)}">${esc(text)}</span>`;
+    fxLayer.appendChild(w);
+    anim(w,[{transform:"translate(-50%,-50%) scale(4) rotate(-6deg)",opacity:0,filter:"blur(8px)"},
+            {transform:"translate(-50%,-50%) scale(.9) rotate(2deg)",opacity:1,filter:"blur(0)",offset:.14},
+            {transform:"translate(-50%,-50%) scale(1.08)",offset:.22},
+            {transform:"translate(-49%,-51%) scale(1)",offset:.3},{transform:"translate(-51%,-49%) scale(1.02)",offset:.38},
+            {transform:"translate(-50%,-50%) scale(1)",opacity:1,offset:.8},
+            {transform:"translate(-50%,-50%) scale(1.25)",opacity:0,filter:"blur(4px)"}],{duration:1500,easing:"ease-out",fill:"forwards"});
+    sfx(tone==="rainbow"?"kyuin":"don");
+    const r=w.getBoundingClientRect(); burst(r.left+r.width/2, r.top+r.height/2, {n:18,emoji:tone==="rainbow"?"🌈":"✨",size:6,dist:140,gravity:0});
+    setTimeout(()=>w.remove(),1550);
+  }, start-now);
 }
 function floatCombo(k){
   const p=fieldPoint(), t=document.createElement("div"); t.className="combo"; t.innerHTML=`<b>${k}</b> COMBO`;
@@ -1118,7 +1157,7 @@ function winFx(e){
   fireworks(me?9:5);
   cutin("win", me?"あなたが1位！":"👑 1位上がり！", me?"大富豪確定！おめでとう！":e.who, me?1800:1500);
   if(me){ confetti(120); vib([60,40,60,40,200]); }
-  if(dopa()){ rainbowStrobe(2200); rgbSplit(600); hitStop(2); const p=seatPoint(e.id); coinFountain(p.x,p.y,me?60:35); setTimeout(()=>stamp(me?"1位確定":"1位","#e8102a"),700); if(me) setTimeout(()=>{ rain(["💰","💎","🪙","👑","🌈"],80,3000); fireworks(6); },1200); }
+  if(dopa()){ rainbowStrobe(2200); rgbSplit(600); hitStop(2); const p=seatPoint(e.id); coinFountain(p.x,p.y,me?60:35); kanji("大当り","rainbow",undefined,.25,150); setTimeout(()=>stamp(me?"1位確定":"1位","#e8102a"),900); if(me) setTimeout(()=>{ rain(["💰","💎","🪙","👑","🌈"],80,3000); fireworks(6); },1200); }
 }
 function placeFx(e){
   const me=e.id===myId;
@@ -1148,20 +1187,20 @@ function playFx(e){
     case "rev": setTimeout(()=>{
         sfx("rev"); revFlip(); flash("#ff2a6a"); vib([60,40,60]);
         const l=document.createElement("div"); l.className="lightning"; fxLayer.appendChild(l); setTimeout(()=>l.remove(),900);
-        rainbowStrobe(1600); rgbSplit(600); if(dopa()){ setTimeout(()=>stamp(e.on?"革命":"返し","#ff2a6a"),900); }
+        rainbowStrobe(1600); rgbSplit(600); if(dopa()){ kanji(e.on?"確変突入":"確変終了", e.on?"rainbow":"dark", undefined, .27, 200); setTimeout(()=>stamp(e.on?"革命":"返し","#ff2a6a"),1100); }
         cutin("rev", e.on?"⚡ 革命 ⚡":"革命返し！", e.on?`${e.who||""}　強さが逆転！`:`${e.who||""}　強さが元通り`, 1500);
       },380); break;
-    case "eight": sweepField(-1); setTimeout(()=>{ sfx("eight"); slashGhost(lastGhost); bigSlash(); comboN=0; if(dopa()){ const p=fieldPoint(); onoma("ズバァッ!!",p.x,p.y,"#9be7ff",60,-20); hitStop(1.5); rgbSplit(); } cutin("eight","✂ 8切り", e.who?`${e.who}　場を斬った！`:"", 1100); },420); break;
-    case "eb": setTimeout(()=>{ sfx("eb"); flash("#6a7bff"); cutin("eb", e.on===false?"11バック解除":"↩ 11バック", e.on===false?"強さが元通り":"場が流れるまで強さ逆転", 1200); },380); break;
-    case "lock": setTimeout(()=>{ chainSlam(); cutin(e.red?"lockr":"lock", `🔒 縛り ${e.suits}`, `${e.suits} しか出せない！`, 1200); },380); break;
-    case "skip": setTimeout(()=>{ sfx("skip"); speedSwipe(); cutin("skip", `⏩ ${e.n}人スキップ`, e.who||"", 1000); },380); break;
+    case "eight": sweepField(-1); setTimeout(()=>{ sfx("eight"); slashGhost(lastGhost); bigSlash(); comboN=0; if(dopa()){ kanji("斬","blue",180,.27); hitStop(1.5); rgbSplit(); } cutin("eight","✂ 8切り", e.who?`${e.who}　場を斬った！`:"", 1100); },420); break;
+    case "eb": setTimeout(()=>{ sfx("eb"); flash("#6a7bff"); kanji("逆","blue",180,.27); cutin("eb", e.on===false?"11バック解除":"↩ 11バック", e.on===false?"強さが元通り":"場が流れるまで強さ逆転", 1200); },380); break;
+    case "lock": setTimeout(()=>{ chainSlam(); kanji("封","green",180,.27); cutin(e.red?"lockr":"lock", `🔒 縛り ${e.suits}`, `${e.suits} しか出せない！`, 1200); },380); break;
+    case "skip": setTimeout(()=>{ sfx("skip"); speedSwipe(); kanji("飛","gold",180,.27); cutin("skip", `⏩ ${e.n}人スキップ`, e.who||"", 1000); },380); break;
     case "finish": setTimeout(()=> e.place===1 ? winFx(e) : placeFx(e), 350); break;
-    case "foul": sfx("foul"); darkPulse(); shake(true); cutin("dark", "🚫 反則上がり", `${e.who}は最下位…`, 1300); break;
-    case "miyako": sfx("miyako"); darkPulse(); shake(true); rain(["💀","🏚"],16,2200); cutin("dark", "🏚 都落ち", `${e.who}が大貧民に転落…`, 1500); break;
+    case "foul": sfx("foul"); darkPulse(); shake(true); kanji("罰","dark",180,.27); cutin("dark", "🚫 反則上がり", `${e.who}は最下位…`, 1300); break;
+    case "miyako": sfx("miyako"); darkPulse(); shake(true); rain(["💀","🏚"],16,2200); kanji("堕","dark",180,.27); cutin("dark", "🏚 都落ち", `${e.who}が大貧民に転落…`, 1500); break;
     case "seven": sfx("seven"); passFlyBacks(e.from,e.to,e.n);
-      if(e.to===myId) cutin("seven", `🎁 ${e.n}枚もらった`, "7渡し", 1000); else floatText(e.to,`🎁+${e.n}`); break;
+      if(e.to===myId){ kanji("贈","gold",170,.27); } if(e.to===myId) cutin("seven", `🎁 ${e.n}枚もらった`, "7渡し", 1000); else floatText(e.to,`🎁+${e.n}`); break;
     case "bomb": sfx("bomb"); boom(); shockwave("#ffb35a"); flash("#ff8a3d"); shake(true); vib([80,40,160]);
-      if(dopa()){ const p=fieldPoint(); onoma("ドカーーン!!",p.x,p.y-60,"#ffb35a",62,-10); hitStop(2); rgbSplit(700); setTimeout(()=>shockwave("#fff"),250); setTimeout(()=>shake(true),500); rain(["💥","🔥","💨"],30,2000); }
+      if(dopa()){ kanji("爆","red",190,.27); hitStop(2); rgbSplit(700); setTimeout(()=>shockwave("#fff"),250); setTimeout(()=>shake(true),500); rain(["💥","🔥","💨"],30,2000); }
       setTimeout(()=>{ const sm=document.createElement("div"); sm.className="smoke"; fxLayer.appendChild(sm); setTimeout(()=>sm.remove(),1600); },200);
       cutin("bomb", "💣 12ボンバー", `${e.ranks} が全員の手札から消滅！`, 1400); break;
     case "pending": if(S && S.pending && S.pending.pid===myId){ sfx("turn"); vib(25); } break;
@@ -1169,7 +1208,7 @@ function playFx(e){
     case "round": sfx("deal"); cutin("round", `第${e.n}ラウンド`, "カードを配るよ", 1000); break;
     case "end":
       if(e.king===myId){ sfx("win"); rays("rgba(255,214,90,.6)",3500); fireworks(10); confetti(160); rain(["👑","🪙","💰","✨"],60,3200); cutin("win","👑 大富豪！","あなたがこのラウンドの王様",2000);
-        if(dopa()){ rainbowStrobe(3000); setTimeout(()=>stamp("大富豪","#e8102a"),900); setTimeout(()=>{ coinFountain(innerWidth/2,innerHeight*.7,80); fireworks(8); },1500); } }
+        if(dopa()){ rainbowStrobe(3000); kanji("大富豪確定","rainbow",undefined,.24,200); setTimeout(()=>stamp("全回転","#e8102a"),1300); setTimeout(()=>{ coinFountain(innerWidth/2,innerHeight*.7,80); fireworks(8); },1500); } }
       else { sfx("pass"); confetti(30); }
       break;
   }
