@@ -193,6 +193,55 @@ html,body,button,.card,.seat{touch-action:manipulation}
 
 .netbar{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:40;background:#c2410c;color:#fff;font-size:13px;font-weight:800;padding:6px 14px;border-radius:99px;box-shadow:0 3px 10px rgba(0,0,0,.4);animation:rib 1s ease-in-out infinite}
 .netbar[hidden]{display:none}
+
+/* ===== 全画面演出 v4 ===== */
+body.ebmode{--feltA:#5566ff;--feltB:#1d2672;--feltC:#0a0d30;--accent:#bcd0ff}
+body.revmode.ebmode{--feltA:#8a55c8;--feltB:#3a1d6a;--feltC:#160a2e}
+body.lockmode .table::before{border:7px dashed #cfd6dc;box-shadow:inset 0 0 0 3px #6f7880,inset 0 0 70px rgba(0,0,0,.55)}
+.wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;line-height:.9;font-size:120px;font-weight:900;color:rgba(255,255,255,.07);transform:rotate(-14deg);pointer-events:none;z-index:0;white-space:nowrap;animation:wmPulse 2.4s ease-in-out infinite}
+.wm.rev{transform:rotate(180deg) rotate(-14deg)}
+.wm.eb{font-size:100px;color:rgba(190,205,255,.09)}
+.wm.lock{font-size:90px;top:auto;bottom:22%;height:auto;color:rgba(255,255,255,.08)}
+.wm.lock.red{color:rgba(255,110,110,.12)}
+@keyframes wmPulse{50%{opacity:.55}}
+.cutin{position:fixed;inset:0;pointer-events:none;z-index:18;overflow:hidden;--b1:#fff;--b2:#888;--lc:rgba(255,255,255,.35);animation:ciBg var(--d,1.3s) ease forwards}
+@keyframes ciBg{0%{background:rgba(0,0,0,0)}12%,80%{background:rgba(0,0,0,.5)}100%{background:rgba(0,0,0,0)}}
+.cutin .lines{position:absolute;left:50%;top:50%;width:250vmax;height:250vmax;margin:-125vmax 0 0 -125vmax;background:repeating-conic-gradient(from 0deg,transparent 0deg 3.2deg,var(--lc) 3.2deg 4deg);-webkit-mask:radial-gradient(circle,transparent 14%,#000 32%);mask:radial-gradient(circle,transparent 14%,#000 32%);animation:ciLines var(--d,1.3s) linear forwards}
+@keyframes ciLines{0%{opacity:0;transform:scale(1.5) rotate(0)}14%,80%{opacity:1}100%{opacity:0;transform:scale(1) rotate(10deg)}}
+.cutin .band{position:absolute;left:-15%;right:-15%;top:50%;height:150px;margin-top:-75px;background:linear-gradient(90deg,var(--b2),var(--b1) 30%,var(--b1) 70%,var(--b2));box-shadow:0 0 50px var(--b1),0 0 0 4px rgba(255,255,255,.7) inset;display:flex;flex-direction:column;align-items:center;justify-content:center;transform:skewY(-9deg) translateX(-110%);animation:ciBand var(--d,1.3s) cubic-bezier(.2,.9,.2,1) forwards}
+@keyframes ciBand{0%{transform:skewY(-9deg) translateX(-110%)}16%{transform:skewY(-9deg) translateX(0)}80%{transform:skewY(-9deg) translateX(3%)}100%{transform:skewY(-9deg) translateX(120%)}}
+.cutin .ttl{font-size:min(66px,15vw);font-weight:900;color:#fff;-webkit-text-stroke:3px rgba(0,0,0,.55);text-shadow:5px 5px 0 rgba(0,0,0,.35);letter-spacing:.04em;white-space:nowrap;transform:skewY(9deg);animation:ciTxt var(--d,1.3s) ease forwards}
+.cutin .ttl.long{font-size:min(54px,12vw)}
+@keyframes ciTxt{0%,12%{transform:skewY(9deg) scale(2.4);opacity:0}24%{transform:skewY(9deg) scale(.94);opacity:1}31%{transform:skewY(9deg) scale(1.06)}38%,100%{transform:skewY(9deg) scale(1)}}
+.cutin .sub{font-size:15px;font-weight:800;color:#fff;transform:skewY(9deg);margin-top:4px;text-shadow:0 2px 3px rgba(0,0,0,.5);white-space:nowrap}
+.k-rev{--b1:#ff2a6a;--b2:#5a0030;--lc:rgba(255,90,150,.45)}
+.k-eight{--b1:#1fb6ff;--b2:#062a6a;--lc:rgba(120,210,255,.45)}
+.k-eb{--b1:#6a7bff;--b2:#15155a;--lc:rgba(160,175,255,.45)}
+.k-lock{--b1:#3fcf7f;--b2:#08401f;--lc:rgba(160,255,200,.4)}
+.k-lockr{--b1:#ff4a4a;--b2:#4a0808;--lc:rgba(255,150,150,.4)}
+.k-skip{--b1:#ff9a1f;--b2:#5a2400;--lc:rgba(255,200,120,.45)}
+.k-seven{--b1:#ffcc33;--b2:#b4366a;--lc:rgba(255,230,140,.45)}
+.k-bomb{--b1:#ff5a1f;--b2:#2a0600;--lc:rgba(255,150,60,.55)}
+.k-win{--b1:#ffd23a;--b2:#8a5a00;--lc:rgba(255,225,120,.6)}
+.k-win .ttl{color:#fff6c2;text-shadow:0 0 18px #fff3a0,5px 5px 0 rgba(120,70,0,.5)}
+.k-silver{--b1:#d8dee6;--b2:#555e68;--lc:rgba(230,235,245,.45)}
+.k-bronze{--b1:#d9894a;--b2:#5a2c0a;--lc:rgba(240,180,130,.4)}
+.k-dark{--b1:#4a4a4a;--b2:#0a0a0a;--lc:rgba(160,160,160,.3)}
+.k-round{--b1:#2d8a3a;--b2:#0a2a10;--lc:rgba(255,255,255,.22)}
+.bigslash{position:fixed;left:-20%;top:50%;width:140%;height:10px;background:linear-gradient(90deg,transparent,#fff 20%,#9be7ff 50%,#fff 80%,transparent);box-shadow:0 0 30px #7fd6ff,0 0 60px #7fd6ff;transform-origin:left center;transform:rotate(-28deg) scaleX(0);z-index:19;pointer-events:none;animation:bslash .5s ease-out forwards}
+.bigslash.b{transform:rotate(22deg) scaleX(0);animation-name:bslash2;top:46%}
+@keyframes bslash{50%{transform:rotate(-28deg) scaleX(1);opacity:1}100%{transform:rotate(-28deg) scaleX(1);opacity:0;height:2px}}
+@keyframes bslash2{50%{transform:rotate(22deg) scaleX(1);opacity:1}100%{transform:rotate(22deg) scaleX(1);opacity:0;height:2px}}
+.rays{position:fixed;left:50%;top:45%;width:220vmax;height:220vmax;transform:translate(-50%,-50%);background:repeating-conic-gradient(var(--rc) 0deg 7deg,transparent 7deg 18deg);-webkit-mask:radial-gradient(circle,#000 5%,transparent 45%);mask:radial-gradient(circle,#000 5%,transparent 45%);z-index:13;pointer-events:none;mix-blend-mode:screen}
+.rainitem{position:fixed;top:0;z-index:17;pointer-events:none}
+.crown{position:fixed;font-size:46px;z-index:19;pointer-events:none;filter:drop-shadow(0 0 10px #ffd54a)}
+.swipe{position:fixed;inset:0;z-index:16;pointer-events:none;background:repeating-linear-gradient(90deg,transparent 0 40px,rgba(255,180,80,.35) 40px 46px,transparent 46px 90px),linear-gradient(90deg,transparent,rgba(255,160,40,.35),transparent)}
+.chainbar{position:fixed;left:-10%;right:-10%;top:40%;font-size:34px;letter-spacing:-6px;text-align:center;white-space:nowrap;z-index:17;pointer-events:none;filter:drop-shadow(0 3px 4px rgba(0,0,0,.6))}
+.chainbar.r{top:55%}
+.lightning{position:fixed;inset:0;z-index:17;pointer-events:none;background:linear-gradient(115deg,transparent 46%,#fff 47%,#ffd0e0 48%,transparent 49%),linear-gradient(70deg,transparent 60%,#fff 61%,transparent 62%);animation:ltn .8s steps(2) forwards}
+@keyframes ltn{0%,40%{opacity:1}20%,60%{opacity:0}100%{opacity:0}}
+.smoke{position:fixed;inset:0;z-index:15;pointer-events:none;background:radial-gradient(circle at 50% 50%,rgba(60,40,30,.75),rgba(30,20,10,.35) 40%,transparent 70%);animation:smoke 1.5s ease-out forwards}
+@keyframes smoke{0%{opacity:0;transform:scale(.5)}20%{opacity:1}100%{opacity:0;transform:scale(1.6)}}
 </style>
 </head>
 <body>
@@ -380,15 +429,15 @@ function doPlay(s,pid,cards){
   log(s,`${nameOf(s,pid)}: ${cards.map(cardText).join(" ")}`);
   fx(s,"play",{id:pid,cards});
   const has = r => cards.some(c=>parse(c).r===r);
-  if(R.rev && info.type==="group" && info.n>=4){ s.rev=!s.rev; log(s, s.rev?"⚡ 革命！":"⚡ 革命返し！"); fx(s,"rev",{on:s.rev}); }
+  if(R.rev && info.type==="group" && info.n>=4){ s.rev=!s.rev; log(s, s.rev?"⚡ 革命！":"⚡ 革命返し！"); fx(s,"rev",{on:s.rev, who:nameOf(s,pid)}); }
   if(R.shibari && prev && !s.lock){
     const a=suitsOf(cards), b=suitsOf(prev.cards);
     if(a.length===cards.length && b.length===prev.cards.length && a.join()===b.join()){
-      s.lock=a; log(s,`🔒 縛り ${a.map(x=>SUIT_SYM[x]).join("")}`); fx(s,"lock",{suits:a.map(x=>SUIT_SYM[x]).join("")});
+      s.lock=a; log(s,`🔒 縛り ${a.map(x=>SUIT_SYM[x]).join("")}`); fx(s,"lock",{suits:a.map(x=>SUIT_SYM[x]).join(""), red:a.some(x=>x==="H"||x==="D"), who:nameOf(s,pid)});
     }
   }
   const eight = R.eight && has(8);
-  if(R.eb && !eight && has(11)){ s.eb=!s.eb; log(s,"↩ 11バック"); fx(s,"eb"); }
+  if(R.eb && !eight && has(11)){ s.eb=!s.eb; log(s,"↩ 11バック"); fx(s,"eb",{on:s.eb, who:nameOf(s,pid)}); }
   if(!s.hands[pid].length){
     const strongest = effRev(s) ? 3 : 15;
     const foul = R.foul && (cards.some(isJoker) || (R.eight && has(8)) || has(strongest));
@@ -438,14 +487,14 @@ function resolveAfter(s){
   const A=s.after||{}, pid=A.pid; s.after=null;
   if(activeOf(s).length<=1){ endRound(s); return; }
   if(A.eight){
-    clearField(s); log(s,"✂ 8切り"); fx(s,"eight");
+    clearField(s); log(s,"✂ 8切り"); fx(s,"eight",{who:nameOf(s,pid)});
     s.turn = activeOf(s).includes(pid) ? pid : nextFrom(s,pid,false);
     return;
   }
   let nx = nextFrom(s,pid,true);
   if(A.five){
     for(let i=0;i<A.five;i++) nx = nextFrom(s,nx,true);
-    log(s,`⏭ ${A.five}人スキップ`); fx(s,"skip",{n:A.five});
+    log(s,`⏭ ${A.five}人スキップ`); fx(s,"skip",{n:A.five, who:nameOf(s,pid)});
   }
   if(!nx){ // 全員パス済みなどで次がいない→場を流す
     const lp=s.lastPlayer; clearField(s);
@@ -477,7 +526,7 @@ function doBomb(s,pid,ranks){
     total+=before-s.hands[id].length;
   }
   log(s,`💣 ${nameOf(s,pid)} の12ボンバー: ${ranks.map(RANK_LABEL).join("・")}（${total}枚消滅）`);
-  fx(s,"bomb",{ranks:ranks.map(RANK_LABEL).join("・"),total});
+  fx(s,"bomb",{ranks:ranks.map(RANK_LABEL).join("・"),total, who:nameOf(s,pid)});
   const o=s.order, i=o.indexOf(pid);
   for(let k=0;k<o.length;k++){ const id=o[(i+k)%o.length]; if(activeOf(s).includes(id)) finishIfEmpty(s,id); }
   nextPending(s);
@@ -735,6 +784,7 @@ function sfx(k){
     case "chat": tone(1200,.06,"sine",.06); tone(1600,.08,"sine",.05,.06); break;
     case "seven": [700,900].forEach((f,i)=>tone(f,.12,"triangle",.08,i*.08)); break;
     case "bomb": noise(.6,.3,0,80); tone(90,.6,"sawtooth",.12,0,40); break;
+    case "fanfare": [[523,0],[659,.12],[784,.24],[1047,.36],[784,.52],[1047,.62],[1319,.74]].forEach(([f,t])=>{ tone(f,.32,"square",.05,t); tone(f/2,.32,"triangle",.06,t); }); break;
     case "thud": tone(70,.35,"sine",.25,0,40); noise(.15,.25,0,600); break;
     case "pop": noise(.12,.12,0,2000); tone(900+Math.random()*600,.15,"sine",.05); break;
     case "win": [523,659,784,1047,784,1047,1319].forEach((f,i)=>tone(f,.3,"triangle",.09,i*.1)); break;
@@ -869,13 +919,104 @@ function myTurnFx(){
   cards.forEach((c,i)=>anim(c,[{translate:"0 0"},{translate:"0 -16px"},{translate:"0 0"}],{duration:380,delay:i*35,easing:"ease-out"}));
 }
 
+// ---- 全画面カットイン（漫画の集中線＋斜めの帯） ----
+function cutin(kind, title, sub, dur=1300){
+  bannerPending++;
+  bannerQ = bannerQ.then(()=>new Promise(res=>{
+    const el=document.createElement("div"); el.className="cutin k-"+kind; el.style.setProperty("--d",dur+"ms");
+    const long=[...title].length>=6 ? " long" : "";
+    el.innerHTML=`<div class="lines"></div><div class="band"><div class="ttl${long}">${esc(title)}</div>${sub?`<div class="sub">${esc(sub)}</div>`:""}</div>`;
+    fxLayer.appendChild(el);
+    setTimeout(()=>el.remove(), dur+80);
+    setTimeout(()=>{ bannerPending--; res(); }, dur*.72);
+  }));
+}
+// 画面全体を走る斬撃
+function bigSlash(){
+  for(let i=0;i<2;i++) setTimeout(()=>{
+    const s=document.createElement("div"); s.className="bigslash"+(i?" b":""); fxLayer.appendChild(s); setTimeout(()=>s.remove(),600);
+  }, i*140);
+  const a=document.getElementById("app");
+  anim(a,[{clipPath:"none",transform:"none"},{transform:"translate(6px,-4px)",offset:.3},{transform:"none"}],{duration:380,delay:200});
+}
+// ぐるぐる回る後光
+function rays(color="rgba(255,214,90,.55)", dur=2600){
+  const r=document.createElement("div"); r.className="rays"; r.style.setProperty("--rc",color); fxLayer.appendChild(r);
+  anim(r,[{opacity:0,transform:"translate(-50%,-50%) rotate(0) scale(.6)"},{opacity:1,offset:.15},{opacity:1,offset:.75},{opacity:0,transform:"translate(-50%,-50%) rotate(120deg) scale(1.3)"}],{duration:dur,easing:"linear",fill:"forwards"});
+  setTimeout(()=>r.remove(),dur+50);
+}
+// 上から降ってくるもの
+function rain(emojis, n=40, dur=2800){
+  for(let i=0;i<n;i++){
+    const c=document.createElement("div"); c.className="rainitem"; c.textContent=emojis[i%emojis.length];
+    c.style.left=(Math.random()*100)+"vw"; c.style.fontSize=(18+Math.random()*22)+"px";
+    fxLayer.appendChild(c);
+    const d=dur*(.6+Math.random()*.6);
+    anim(c,[{transform:`translateY(-60px) rotate(0)`},{transform:`translateY(${innerHeight+80}px) rotate(${Math.random()*720-360}deg)`}],{duration:d,delay:Math.random()*700,easing:"cubic-bezier(.3,.1,.7,1)",fill:"both"});
+    setTimeout(()=>c.remove(), d+800);
+  }
+}
+// 王冠が降ってきて席に乗る
+function crownDrop(pid){
+  const p=seatPoint(pid), c=document.createElement("div"); c.className="crown"; c.textContent="👑";
+  c.style.left=p.x+"px"; c.style.top=(p.y-46)+"px"; fxLayer.appendChild(c);
+  anim(c,[{transform:"translate(-50%,-50%) translateY(-500px) scale(2.5) rotate(-30deg)"},{transform:"translate(-50%,-50%) translateY(0) scale(1.2) rotate(8deg)",offset:.55},{transform:"translate(-50%,-50%) translateY(-24px) scale(1.05)",offset:.75},{transform:"translate(-50%,-50%) translateY(0) scale(1)"}],{duration:900,easing:"ease-out",fill:"forwards"});
+  setTimeout(()=>{ burst(p.x,p.y-46,{n:24,emoji:"✨",size:7,dist:90}); ring(p.x,p.y-46,"#ffd54a",220); }, 520);
+  anim(c,[{opacity:1},{opacity:0}],{duration:600,delay:2600,fill:"forwards"});
+  setTimeout(()=>c.remove(),3300);
+}
+// 画面全体の衝撃波
+function shockwave(color="#fff"){
+  const p=fieldPoint(), r=document.createElement("div"); r.className="ring"; r.style.cssText=`left:${p.x}px;top:${p.y}px;border-color:${color};border-width:14px`;
+  fxLayer.appendChild(r);
+  const D=Math.hypot(innerWidth,innerHeight)*2.2;
+  anim(r,[{width:"10px",height:"10px",opacity:1},{width:D+"px",height:D+"px",opacity:0}],{duration:800,easing:"cubic-bezier(.1,.7,.3,1)",fill:"forwards"});
+  setTimeout(()=>r.remove(),850);
+}
+function speedSwipe(){
+  const s=document.createElement("div"); s.className="swipe"; fxLayer.appendChild(s);
+  anim(s,[{transform:"translateX(-100%)"},{transform:"translateX(100%)"}],{duration:700,easing:"cubic-bezier(.6,0,.4,1)",fill:"forwards"});
+  setTimeout(()=>s.remove(),750);
+}
+function chainSlam(){
+  for(const side of ["l","r"]){
+    const c=document.createElement("div"); c.className="chainbar "+side; c.textContent="🔗".repeat(14); fxLayer.appendChild(c);
+    anim(c,[{transform:`translateX(${side==="l"?"-110%":"110%"}) rotate(${side==="l"?-20:20}deg)`},{transform:`translateX(0) rotate(${side==="l"?-20:20}deg)`,offset:.4},{transform:`translateX(0) rotate(${side==="l"?-20:20}deg)`,opacity:1,offset:.8},{opacity:0}],{duration:1200,easing:"cubic-bezier(.3,1.4,.5,1)",fill:"forwards"});
+    setTimeout(()=>c.remove(),1250);
+  }
+  setTimeout(()=>{ sfx("lock"); shake(); },450);
+}
+function darkPulse(){
+  const a=document.getElementById("app");
+  anim(a,[{filter:"none"},{filter:"grayscale(1) brightness(.55)",offset:.2},{filter:"grayscale(1) brightness(.55)",offset:.75},{filter:"none"}],{duration:1600});
+}
+
+// 1位上がり（他人でも派手に、自分ならもっと派手に）
+function winFx(e){
+  const me=e.id===myId;
+  sfx("fanfare"); flash("#ffe36a"); rays(); crownDrop(e.id);
+  rain(me?["🪙","✨","👑","🎉","💰"]:["🪙","✨","🎉"], me?70:35);
+  fireworks(me?9:5);
+  cutin("win", me?"あなたが1位！":"👑 1位上がり！", me?"大富豪確定！おめでとう！":e.who, me?1800:1500);
+  if(me){ confetti(120); vib([60,40,60,40,200]); }
+}
+function placeFx(e){
+  const me=e.id===myId;
+  sfx("finish");
+  const p=seatPoint(e.id); burst(p.x,p.y,{n:20,emoji:"⭐",size:7,dist:110});
+  floatText(e.id, `${e.place}位 上がり`, "win");
+  if(e.place===2){ cutin("silver", "🥈 2位上がり", e.who, 1100); rain(["✨","⭐"],18,2000); }
+  else if(e.place===3){ cutin("bronze", "🥉 3位上がり", e.who, 1000); }
+  else banner(`${e.who} ${e.place}位`,"finish",true);
+  if(me){ fireworks(4); confetti(70); vib([40,30,40,30,120]); }
+}
+
 function playFx(e){
   const strongCard = cs => cs && (cs.length>=3 || cs.some(c=>{const r=parse(c).r; return r===16||r===15;}));
   switch(e.k){
     case "play":
       sfx(strongCard(e.cards)?"thud":"play");
       if(e.cards) flyCardsToField(e.id, e.cards, (p,g)=>{
-        if(!S || !S.field || S.field.by!==e.id){ /* 場が流れた系はeightで処理 */ }
         if(strongCard(e.cards)){ burst(p.x,p.y,{n:22,dist:110}); ring(p.x,p.y,"#ffd54a"); shake(); }
         else burst(p.x,p.y,{n:8,dist:50,size:6,colors:["#fff","#ffe08a"]});
         if(g) lastGhost=g;
@@ -883,29 +1024,34 @@ function playFx(e){
       break;
     case "pass": sfx("pass"); if(e.id) floatText(e.id,"パス","pass"); break;
     case "clear": sfx("clear"); sweepField(1); break;
-    case "rev": setTimeout(()=>{ sfx("rev"); revFlip(); flash("#ff2a6a"); vib([60,40,60]); banner(e.on?"⚡革命⚡":"革命返し！","rev",false,true); },380); break;
-    case "eight": sweepField(-1); setTimeout(()=>{ sfx("eight"); slashGhost(lastGhost); banner("✂ 8切り","eight",false,true); },420); break;
-    case "eb": sfx("eb"); banner("↩ 11バック","eb"); break;
-    case "lock": sfx("lock"); banner(`🔒 縛り ${e.suits}`,"lock"); break;
-    case "skip": sfx("skip"); banner(`⏭ ${e.n}人スキップ`,"skip"); break;
-    case "finish": setTimeout(()=>{
-        sfx("finish"); const p=seatPoint(e.id);
-        burst(p.x,p.y,{n:20,emoji:"⭐",size:7,dist:110});
-        floatText(e.id, e.place===1?"👑 1位！":`${e.place}位 上がり`, "win");
-        if(e.id===myId){ fireworks(4); vib([40,30,40,30,120]); banner(`${e.place}位で上がり！`,"finish",false,true); }
-        else banner(`${e.who} ${e.place}位！`,"finish",true);
-      },300); break;
-    case "foul": sfx("foul"); shake(); floatText(e.id||"", "🚫反則"); banner(`${e.who} 反則上がり…`,"foul",true,true); break;
-    case "miyako": sfx("miyako"); shake(true); banner(`🏚 都落ち… ${e.who}`,"miyako",true,true); break;
-    case "seven": sfx("seven"); passFlyBacks(e.from,e.to,e.n); if(e.to===myId) banner(`🎁 ${e.n}枚もらった`,"eight",true,true); else floatText(e.to,`🎁+${e.n}`); break;
-    case "bomb": sfx("bomb"); boom(); flash("#ff8a3d"); shake(true); vib([80,40,160]); banner(`💣 ${e.ranks} 消滅！`,"rev",false,true); break;
+    case "rev": setTimeout(()=>{
+        sfx("rev"); revFlip(); flash("#ff2a6a"); vib([60,40,60]);
+        const l=document.createElement("div"); l.className="lightning"; fxLayer.appendChild(l); setTimeout(()=>l.remove(),900);
+        cutin("rev", e.on?"⚡ 革命 ⚡":"革命返し！", e.on?`${e.who||""}　強さが逆転！`:`${e.who||""}　強さが元通り`, 1500);
+      },380); break;
+    case "eight": sweepField(-1); setTimeout(()=>{ sfx("eight"); slashGhost(lastGhost); bigSlash(); cutin("eight","✂ 8切り", e.who?`${e.who}　場を斬った！`:"", 1100); },420); break;
+    case "eb": setTimeout(()=>{ sfx("eb"); flash("#6a7bff"); cutin("eb", e.on===false?"11バック解除":"↩ 11バック", e.on===false?"強さが元通り":"場が流れるまで強さ逆転", 1200); },380); break;
+    case "lock": setTimeout(()=>{ chainSlam(); cutin(e.red?"lockr":"lock", `🔒 縛り ${e.suits}`, `${e.suits} しか出せない！`, 1200); },380); break;
+    case "skip": setTimeout(()=>{ sfx("skip"); speedSwipe(); cutin("skip", `⏩ ${e.n}人スキップ`, e.who||"", 1000); },380); break;
+    case "finish": setTimeout(()=> e.place===1 ? winFx(e) : placeFx(e), 350); break;
+    case "foul": sfx("foul"); darkPulse(); shake(true); cutin("dark", "🚫 反則上がり", `${e.who}は最下位…`, 1300); break;
+    case "miyako": sfx("miyako"); darkPulse(); shake(true); rain(["💀","🏚"],16,2200); cutin("dark", "🏚 都落ち", `${e.who}が大貧民に転落…`, 1500); break;
+    case "seven": sfx("seven"); passFlyBacks(e.from,e.to,e.n);
+      if(e.to===myId) cutin("seven", `🎁 ${e.n}枚もらった`, "7渡し", 1000); else floatText(e.to,`🎁+${e.n}`); break;
+    case "bomb": sfx("bomb"); boom(); shockwave("#ffb35a"); flash("#ff8a3d"); shake(true); vib([80,40,160]);
+      setTimeout(()=>{ const sm=document.createElement("div"); sm.className="smoke"; fxLayer.appendChild(sm); setTimeout(()=>sm.remove(),1600); },200);
+      cutin("bomb", "💣 12ボンバー", `${e.ranks} が全員の手札から消滅！`, 1400); break;
     case "pending": if(S && S.pending && S.pending.pid===myId){ sfx("turn"); vib(25); } break;
     case "join": sfx("chat"); if(e.who) toast(`${e.who} が入ってきた！`); break;
-    case "round": sfx("deal"); banner(`第${e.n}ラウンド`,"round",false,true); break;
-    case "end": if(e.king===myId){ sfx("win"); fireworks(7); confetti(140); banner("👑 大富豪！","finish",false,true); } else { sfx("pass"); confetti(30); } break;
+    case "round": sfx("deal"); cutin("round", `第${e.n}ラウンド`, "カードを配るよ", 1000); break;
+    case "end":
+      if(e.king===myId){ sfx("win"); rays("rgba(255,214,90,.6)",3500); fireworks(10); confetti(160); rain(["👑","🪙","💰","✨"],60,3200); cutin("win","👑 大富豪！","あなたがこのラウンドの王様",2000); }
+      else { sfx("pass"); confetti(30); }
+      break;
   }
 }
 let lastGhost=null;
+
 
 // =====================================================================
 // 通信
@@ -1313,7 +1459,7 @@ function backToEntry(msg){
   if(unsub){unsub();unsub=null;}
   resetAvatars();
   cleanupP2P();
-  mode=null; S=null; screen="entry"; sel.clear(); errMsg=msg||""; document.body.classList.remove("revmode"); render();
+  mode=null; S=null; screen="entry"; sel.clear(); errMsg=msg||""; document.body.classList.remove("revmode","ebmode","lockmode"); render();
 }
 async function leave(){
   if(mode==="online"){
@@ -1346,7 +1492,10 @@ const bubbles={};   // pid -> {text, at}
 function render(){
   if(screen==="entry"){ updateChat(); return renderEntry(); }
   if(!S){ app.innerHTML=`<div class="page"><h1>合言葉大富豪</h1><div class="panel">${esc(connStatus||"接続中…")}<div class="note" style="margin-top:6px">合言葉: ${esc(roomKey)}</div></div><button class="ghost" id="back">やめる</button></div>`; document.getElementById("back").onclick=()=>backToEntry(); return; }
-  document.body.classList.toggle("revmode", S.phase==="play" && effRev(S));
+  const playing=S.phase==="play";
+  document.body.classList.toggle("revmode", playing && !!S.rev);
+  document.body.classList.toggle("ebmode", playing && !!S.eb);
+  document.body.classList.toggle("lockmode", playing && !!S.lock);
   collectChat();
   if(S.phase==="lobby") renderLobby();
   else if(S.phase==="result") renderResult();
@@ -1423,7 +1572,7 @@ function bindSound(){ const b=document.getElementById("snd"); if(b) b.onclick=()
 
 let hashKeep="";
 function renderEntry(){
-  document.body.classList.remove("revmode");
+  document.body.classList.remove("revmode","ebmode","lockmode");
   const nm=store.get("dfg_name")||"";
   let hashPass=hashKeep||""; try{ if(!hashPass) hashPass = !inArtifact && location.hash.length>1 ? decodeURIComponent(location.hash.slice(1)) : ""; }catch(e){}
   const netMsg = !netChecked ? "接続確認中…" : !net ? "オンライン機能が使えない環境です（ひとりモードは遊べる）" : "";
@@ -1672,6 +1821,7 @@ function renderGame(){
   const bombPicker = C.kind==="bomb" ? `<div class="bombpick">${[3,4,5,6,7,8,9,10,11,12,13,14,15,16].map(r=>`<button class="${bombSel.has(r)?"on":""}" data-rank="${r}">${r===16?"🃏":RANK_LABEL(r)}</button>`).join("")}</div>` : "";
   app.innerHTML=`
   <div class="table ${myMoment?"myturn":""}">
+    ${S.rev?`<div class="wm rev">革命</div>`:""}${S.eb?`<div class="wm eb">11<br>BACK</div>`:""}${S.lock?`<div class="wm lock ${S.lock.some(x=>x==="H"||x==="D")?"red":""}">🔒${S.lock.map(x=>SUIT_SYM[x]).join("")}</div>`:""}
     <div class="tbar">
       <div class="ticker"><div class="rd">第${S.round}ラウンド · ${esc(roomKey)}${watchers.length?` · 観戦${watchers.length}`:""}</div>${lastLogs.map(l=>`<div>${esc(l)}</div>`).join("")}</div>
       ${mode==="online"?chatBtn():""}${soundBtn("round")}<button class="round" id="menu">≡</button>
