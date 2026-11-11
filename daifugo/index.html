@@ -1015,8 +1015,7 @@ function playDopa(e){
   setTimeout(()=>{
     // 擬音
     if(joker){ onoma("ドギャーン!!",p.x,p.y-150,"#e9b8ff",52,-8); }
-    else if(n>=3 || two) onoma(n>=4?"ズドドドン!!":"ドンッ!!",p.x+20,p.y-20,"#ffd54a",56);
-    else onoma(["パシッ","ペチッ","スパッ","パンッ"][Math.floor(Math.random()*4)],p.x+50,p.y-40,"#fff",32);
+    else if(n>=4) onoma("ズドドドン!!",p.x+20,p.y-130,"#ffd54a",50);
     if(joker){ hitStop(2); rgbSplit(); rainbowStrobe(1100); cutin("joker","🃏 JOKER降臨","最強のカードが出た！",1100); coinFountain(p.x,p.y,30); }
     else if(two || n>=3){ hitStop(1.4); rgbSplit(300); coinFountain(p.x,p.y,n>=3?20:14); }
     if(mine){
@@ -1144,12 +1143,12 @@ function playFx(e){
       });
       playDopa(e);
       break;
-    case "pass": sfx("pass"); if(e.id) floatText(e.id, dopa()?["パス…","スッ…","ムリ…"][Math.floor(Math.random()*3)]:"パス","pass"); break;
-    case "clear": sfx("clear"); sweepField(1); comboN=0; if(dopa()){ const p=fieldPoint(); onoma("シュバッ",p.x,p.y,"#cfe",40,-8); } break;
+    case "pass": sfx("pass"); if(e.id) floatText(e.id,"パス","pass"); break;
+    case "clear": sfx("clear"); sweepField(1); comboN=0; break;
     case "rev": setTimeout(()=>{
         sfx("rev"); revFlip(); flash("#ff2a6a"); vib([60,40,60]);
         const l=document.createElement("div"); l.className="lightning"; fxLayer.appendChild(l); setTimeout(()=>l.remove(),900);
-        rainbowStrobe(1600); rgbSplit(600); if(dopa()){ const p=fieldPoint(); onoma("ゴゴゴゴゴ…",p.x,p.y+90,"#ff8fb1",40,-6); setTimeout(()=>stamp(e.on?"革命":"返し","#ff2a6a"),900); }
+        rainbowStrobe(1600); rgbSplit(600); if(dopa()){ setTimeout(()=>stamp(e.on?"革命":"返し","#ff2a6a"),900); }
         cutin("rev", e.on?"⚡ 革命 ⚡":"革命返し！", e.on?`${e.who||""}　強さが逆転！`:`${e.who||""}　強さが元通り`, 1500);
       },380); break;
     case "eight": sweepField(-1); setTimeout(()=>{ sfx("eight"); slashGhost(lastGhost); bigSlash(); comboN=0; if(dopa()){ const p=fieldPoint(); onoma("ズバァッ!!",p.x,p.y,"#9be7ff",60,-20); hitStop(1.5); rgbSplit(); } cutin("eight","✂ 8切り", e.who?`${e.who}　場を斬った！`:"", 1100); },420); break;
