@@ -683,6 +683,10 @@ body.wide .kchip .ks b{font-size:18px}
 .sldust .piece{position:absolute;inset:0}
 .sldust .piece .ava{width:100%;height:100%;font-size:calc(var(--S)*.46);border-width:calc(var(--S)*.03);border-radius:calc(var(--S)*.08);filter:grayscale(1) brightness(.6) contrast(1.2)}
 .slcloud{position:absolute;pointer-events:none;filter:grayscale(1) brightness(.55) drop-shadow(0 8px 14px #000)}
+
+.pwnote{margin-top:4px}.pwnote.warn{color:#ffb35a}
+button.danger{color:#ff8a8a;border-color:rgba(255,90,90,.5)}
+.secpanel .rules{grid-template-columns:1fr 1fr}
 </style>
 </head>
 <body>
@@ -818,6 +822,8 @@ function nextFrom(s, pid, skipPassed){
   }
   return null;
 }
+const safeText = t => String(t).replace(/[\u0000-\u001f\u007f]/g," ").replace(/[<>"'`&\\]/g, ch=>({"<":"＜",">":"＞","\"":"”","'":"’","`":"‘","&":"＆","\\":"＼"})[ch]);
+const okKh = k => typeof k==="string" && /^[0-9a-f]{16,64}$/.test(k);
 function log(s,msg){ s.log.push(msg); if(s.log.length>10) s.log=s.log.slice(-10); }
 function fx(s, k, extra){ (s.fxk=s.fxk||[]).push({k, ...(extra||{})}); }
 function cardText(c){const p=parse(c); return p.r===16?"🃏":SUIT_SYM[p.s]+RANK_LABEL(p.r);}
@@ -828,7 +834,7 @@ function nextRank(r, rev){ const t=st(r,rev)+1; for(let x=3;x<=15;x++) if(st(x,r
 function blankRoom(hostId){
   return {v:0, host:hostId, players:[], phase:"lobby", order:[], hands:{}, counts:{}, field:null, rev:false, eb:false, lock:null,
           turn:null, passed:[], finished:[], losers:[], ranking:[], lastPlayer:null, log:[], round:0, titles:{}, prevFinish:[],
-          rules:{...DEFAULT_RULES}, game:"daifugo", urules:{...UNO_DEFAULT}, u:null, b:null, k:null, fx:{n:0,k:[]}, updatedAt:Date.now()};
+          rules:{...DEFAULT_RULES}, game:"daifugo", urules:{...UNO_DEFAULT}, u:null, b:null, k:null, fair:true, locked:false, banned:[], fx:{n:0,k:[]}, updatedAt:Date.now()};
 }
 
 function startRound(s){
@@ -1524,29 +1530,33 @@ function applyAction(s, actor, a){
   let r=false;
   switch(a && a.t){
     case "join": {
-      const name=String(a.name||"").slice(0,10)||"名無し";
+      const name=safeText(String(a.name||"").trim()).slice(0,10)||"名無し";
+      const kh=okKh(a.kh)?a.kh:null;
       const me=s.players.find(p=>p.id===actor);
+      if(me && me.kh && kh!==me.kh){ r="本人確認に失敗した（別の端末・ブラウザからは同じ人として入れないよ）"; break; }
+      if(kh && (s.banned||[]).includes(kh)){ r="この部屋には入れません"; break; }
       if(me){
         if(me.away || me.offline){ me.away=false; me.bot=false; delete me.offline; delete me.offAt; log(s,`${me.name} が復帰`); r=true; }
         break;
       }
       const same=s.players.find(p=>p.name===name);
-      if(same && (same.away || same.offline)){ replaceId(s,same.id,actor); same.bot=false; same.away=false; delete same.offline; delete same.offAt; log(s,`${name} が復帰`); r=true; break; }
+      if(s.locked && !(same && same.kh && same.kh===kh)){ r="🔒 この部屋は鍵がかかってる（ホストに開けてもらってね）"; break; }
+      if(same && (same.away || same.offline) && (!same.kh || same.kh===kh)){ replaceId(s,same.id,actor); same.bot=false; same.away=false; delete same.offline; delete same.offAt; log(s,`${name} が復帰`); r=true; break; }
       if(same){ r="同じ名前の人がいるよ（別の名前にしてね）"; break; }
       if(s.phase==="play"){
         // 途中参加: 抜けた人の席→まだ残ってるCPUの席→観戦（次ラウンドから）
         const out=outSet(s);
-        const seat = s.players.find(p=>p.away && s.order.includes(p.id) && !out.has(p.id))
-                  || s.players.find(p=>p.bot && s.order.includes(p.id) && !out.has(p.id));
+        const seat = s.players.find(p=>p.bot && !p.away && s.order.includes(p.id) && !out.has(p.id))
+                  || s.players.find(p=>p.away && s.order.includes(p.id) && !out.has(p.id));
         if(seat){
           const old=seat.name; replaceId(s,seat.id,actor);
-          seat.bot=false; seat.away=false; seat.name=name;
+          seat.bot=false; seat.away=false; seat.name=name; if(kh) seat.kh=kh; else delete seat.kh;
           log(s,`${name} が途中参加（${old}の席）`); fx(s,"join",{who:name}); r=true; break;
         }
       }
       if(s.players.length>=MAX_PLAYERS){ r=`満員（${MAX_PLAYERS}人）です`; break; }
       if(!s.players.some(p=>!p.bot)) s.host=actor;
-      s.players.push({id:actor,name,bot:false,ready:false, ...(s.phase==="play"?{wait:true}:{})});
+      s.players.push({id:actor,name,bot:false,ready:false, ...(kh?{kh}:{}), ...(s.phase==="play"?{wait:true}:{})});
       log(s, s.phase==="play" ? `${name} が観戦中（次のラウンドから参加）` : `${name} が入室`); fx(s,"join",{who:name}); r=true; break;
     }
     case "leave": {
@@ -1576,6 +1586,18 @@ function applyAction(s, actor, a){
       if(s.phase==="play" && s.order.includes(p.id)){ if(!p.away){ p.bot=true; p.away=true; log(s,`${p.name} の接続が切れた（CPUが代打ち）`); r=true; } }
       else { s.players=s.players.filter(x=>x.id!==p.id); s.ranking=(s.ranking||[]).filter(x=>x!==p.id); r=true; }
       break;
+    }
+    case "lock": if(host){ s.locked=!!a.v; log(s, s.locked?"🔒 ホストが部屋に鍵をかけた":"🔓 部屋の鍵を開けた"); r=true; } break;
+    case "fair": if(host && s.phase!=="play"){ s.fair=!!a.v; r=true; } break;
+    case "kick": {
+      if(!host || a.id===actor) break;
+      const p=s.players.find(x=>x.id===a.id); if(!p || p.bot) break;
+      const kname=p.name;
+      if(p.kh) s.banned=(s.banned||[]).concat(p.kh).slice(-30);
+      if(s.phase==="play" && s.order.includes(p.id)){ p.bot=true; p.away=true; p.name="CPU 代打ち"; delete p.kh; replaceId(s,p.id,"b"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)); }
+      else { s.players=s.players.filter(x=>x.id!==p.id); s.ranking=(s.ranking||[]).filter(x=>x!==p.id); }
+      log(s,`🚪 ${kname} を退出させた`);
+      r=true; break;
     }
     case "addbot": if(host && s.phase!=="play") r=addBot(s); break;
     case "rm": if(host && s.phase!=="play" && a.id!==actor){ const n=s.players.length; s.players=s.players.filter(p=>p.id!==a.id); s.ranking=s.ranking.filter(x=>x!==a.id); r=s.players.length!==n; } break;
@@ -1619,7 +1641,7 @@ function applyAction(s, actor, a){
     }
     case "ready": { const p=s.players.find(x=>x.id===actor); if(p && s.phase!=="play"){ p.ready=!!a.v; r=true; } break; }
     case "chat": {
-      const p=s.players.find(x=>x.id===actor); const text=String(a.text||"").replace(/[\u0000-\u001f]/g," ").trim().slice(0,80);
+      const p=s.players.find(x=>x.id===actor); const text=safeText(String(a.text||"").slice(0,200)).trim().slice(0,80);
       if(!p || !text) break;
       const now=a.at||Date.now(); s.chatAt=s.chatAt||{};
       if(now-(s.chatAt[actor]||0) < 700) break;                       // 連投は無視
@@ -1630,9 +1652,9 @@ function applyAction(s, actor, a){
       } else s.chat=list.concat({id:(s.chatN=(s.chatN||0)+1), by:actor, name:p.name, text, at:now}).slice(-40);
       r=true; break;
     }
-    case "give": if(s.game!=="daifugo") break; r=doGive(s,actor,Array.isArray(a.cards)?a.cards.map(String):[]); break;
-    case "bomb": if(s.game!=="daifugo") break; r=doBomb(s,actor,Array.isArray(a.ranks)?a.ranks:[]); break;
-    case "play": if(s.game!=="daifugo") break; r=doPlay(s,actor,Array.isArray(a.cards)?a.cards.map(String):[]); break;
+    case "give": if(s.game!=="daifugo") break; r=doGive(s,actor,Array.isArray(a.cards)?a.cards.slice(0,60).map(String):[]); break;
+    case "bomb": if(s.game!=="daifugo") break; r=doBomb(s,actor,Array.isArray(a.ranks)?a.ranks.slice(0,20):[]); break;
+    case "play": if(s.game!=="daifugo") break; r=doPlay(s,actor,Array.isArray(a.cards)?a.cards.slice(0,60).map(String):[]); break;
     case "pass": if(s.game==="uno"){ r=uPass(s,actor); break; } if(s.game!=="daifugo") break; r=doPass(s,actor); break;
     case "bot": {
       if(!host || s.phase!=="play") break;
@@ -2516,6 +2538,33 @@ const inArtifact = !!(window.claude && typeof window.claude.use==="function");
 let net=null, netChecked=false;          // "db" | "p2p" | null
 let db=null;
 let myId = store.get("dfg_uid") || sstore.get("dfg_id"); if(!myId){ myId="u"+rid()+rid(); } store.set("dfg_uid",myId); sstore.set("dfg_id",myId);
+// ---- セキュリティ ----
+// 端末ごとの秘密鍵（外には出さない）。部屋ごとに派生させた鍵でホストに本人確認し、
+// 状態には鍵のハッシュだけを載せる → 他人がIDをまねても席や手札を乗っ取れない
+const hex = buf => [...new Uint8Array(buf)].map(x=>x.toString(16).padStart(2,"0")).join("");
+async function sha256hex(t){
+  try{ if(window.crypto && crypto.subtle) return hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t))); }catch(e){}
+  return hash(t)+hash("#"+t);
+}
+function randHex(n){ const a=new Uint8Array(n); try{ crypto.getRandomValues(a); }catch(e){ for(let i=0;i<n;i++) a[i]=Math.random()*256|0; } return hex(a); }
+let myKey=store.get("dfg_key"); if(!/^[0-9a-f]{32}$/.test(myKey||"")){ myKey=randHex(16); store.set("dfg_key",myKey); }
+let roomSecret="", myKh="";
+async function prepRoomKey(roomId){ roomSecret=await sha256hex("k|"+myKey+"|"+roomId); myKh=await sha256hex("h|"+roomSecret); }
+// よそから来た状態を無害化（HTMLに効く記号を潰す・プロトタイプ汚染を防ぐ）
+function cleanIn(o, d=0){
+  if(d>14) return null;
+  if(typeof o==="string") return o.length>5000 ? o.slice(0,5000) : o.replace(/[<>"'`]/g, ch=>({"<":"＜",">":"＞","\"":"”","'":"’","`":"‘"})[ch]);
+  if(typeof o==="number") return Number.isFinite(o)?o:0;
+  if(typeof o==="boolean" || o===null) return o;
+  if(Array.isArray(o)) return o.slice(0,3000).map(x=>cleanIn(x,d+1));
+  if(typeof o==="object"){ const r={}; let n=0; for(const k of Object.keys(o)){ if(k==="__proto__"||k==="constructor"||k==="prototype") continue; if(++n>3000) break; r[cleanIn(k,d+1)]=cleanIn(o[k],d+1); } return r; }
+  return null;
+}
+function randomPass(){
+  const W=["とら","さくら","くじら","いちご","ほし","かみなり","ねこ","うさぎ","たいやき","ゆきだるま","ぺんぎん","もみじ","すいか","ひまわり","おばけ","ろけっと","らーめん","かっぱ","にんじゃ","どらごん"];
+  const pick=()=>W[(crypto.getRandomValues?crypto.getRandomValues(new Uint32Array(1))[0]:Math.random()*1e9)%W.length];
+  return pick()+"-"+pick()+"-"+(1000+((crypto.getRandomValues?crypto.getRandomValues(new Uint32Array(1))[0]:Math.random()*1e9)%9000));
+}
 
 let mode=null;       // "online" | "solo"
 let S=null, roomKey="", roomPath="", unsub=null, loadTimer=null;
@@ -2700,6 +2749,7 @@ function netBar(msg){
 }
 function hostApply(actor,a){
   const s=clone(S); const r=applyAction(s,actor,a);
+  if(r===true && a.t==="kick"){ const c=conns.get(a.id); if(c){ conns.delete(a.id); try{ c.send({kicked:2}); }catch(e){} setTimeout(()=>{ try{c.close()}catch(e){} },300); } }
   if(r===true){ applyState(s); broadcast(); driveBots(); }
   else if(typeof r==="string" && actor===myId) toast(r);
   return r;
@@ -2707,11 +2757,21 @@ function hostApply(actor,a){
 function sendState(c){ if(c.open){ try{ c.send({state:viewFor(S,c.pid)}); }catch(e){} } }
 const liveConn = id => { const c=conns.get(id); return !!(c && c.open && Date.now()-(c.lastSeen||0) < 12000); };
 function backupPid(){ const p=S && S.players.find(x=>!x.bot && !x.offline && x.id!==myId && liveConn(x.id)); return p ? p.id : null; }
+// 公平モード：ゲーム中はバックアップ役にも手札を渡さない（ホストが落ちたらそのラウンドは中止してロビーへ）
+function lobbyBackup(s){
+  const b=clone(s);
+  Object.assign(b,{phase:"lobby", aborted:true, hands:{}, counts:{}, order:[], turn:null, field:null, passed:[], finished:[], losers:[], ranking:[], titles:{},
+    pending:null, pendingQ:[], after:null, u:null, b:null, k:null, rev:false, eb:false, lock:null, stair:false, lastPlayer:null});
+  b.players=b.players.filter(p=>!(p.bot && p.away)); b.players.forEach(p=>{ p.ready=false; delete p.wait; });
+  b.log=["⚠ ホストが落ちたので、このラウンドは中止になった"]; b.fx={n:(s.fx&&s.fx.n)||0,k:[]};
+  return b;
+}
 function broadcast(){
   const bk=backupPid();
+  const backup = bk ? (S.fair!==false && S.phase==="play" ? lobbyBackup(S) : S) : null;
   for(const c of conns.values()){
     if(!c.open) continue;
-    try{ c.send(c.pid===bk ? {state:viewFor(S,c.pid), backup:S} : {state:viewFor(S,c.pid)}); }catch(e){}
+    try{ c.send(c.pid===bk ? {state:viewFor(S,c.pid), backup} : {state:viewFor(S,c.pid)}); }catch(e){}
   }
 }
 
@@ -2723,20 +2783,36 @@ function setupHostConn(c){
     else if(st==="disconnected") setTimeout(()=>{ if(["disconnected","failed"].includes(pc.iceConnectionState)){ try{c.close()}catch(e){} dropConn(c); } },8000);
   }); });
   c.on("data", m=>{
-    if(!m || typeof m!=="object" || !S) return;
-    c.lastSeen=Date.now();
+    if(!m || typeof m!=="object" || Array.isArray(m) || !S) return;
+    const now=Date.now();
+    // 連打・巨大メッセージ対策
+    if(!c.rl || now-c.rl.t>5000) c.rl={t:now,n:0};
+    if(++c.rl.n>60){ if(c.rl.n>300){ try{ c.close(); }catch(e){} } return; }
+    try{ if(JSON.stringify(m).length>60000) return; }catch(e){ return; }
+    c.lastSeen=now;
     if(m.t==="ping"){ try{ c.send({pong:1}); }catch(e){} return; }
     if(m.t==="merge"){ handleMerge(c,m); return; }
     if(m.t==="join"){
-      const pid=String(m.id||"").slice(0,40); if(!pid) return;
-      c.pid=pid;
-      const old=conns.get(pid); conns.set(pid,c);
-      if(old && old!==c){ old.__replaced=true; try{ old.send({kicked:1}); }catch(e){} setTimeout(()=>{ try{ old.close(); }catch(e){} },150); }
-      // 同じ名前で、接続が死んでる「幽霊」は片付けてから入れる
-      const nm=String(m.name||"").slice(0,10);
-      const ghost=S.players.find(p=>p.name===nm && p.id!==pid && p.id!==myId && !p.bot && !liveConn(p.id));
-      if(ghost){ const gc=conns.get(ghost.id); if(gc){ conns.delete(ghost.id); try{gc.close()}catch(e){} } hostApply(myId,{t:"drop",id:ghost.id}); }
-      try{ c.send({avatars:{...avatars}}); }catch(e){}
+      const pid=String(m.id||"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40); if(!pid || pid===myId || c.__joining) return;
+      const key=String(m.key||""); c.__joining=true;
+      (/^[0-9a-f]{64}$/.test(key) ? sha256hex("h|"+key) : Promise.resolve(null)).then(kh=>{
+        c.__joining=false;
+        if(!S || !c.open) return;
+        const pl=S.players.find(p=>p.id===pid);
+        if(pl && pl.kh && pl.kh!==kh){ try{ c.send({err:"本人確認に失敗した（同じ人として入れない）", fatal:true}); }catch(e){} setTimeout(()=>{ try{c.close()}catch(e){} },300); return; }
+        if(kh && (S.banned||[]).includes(kh)){ try{ c.send({err:"この部屋には入れません", fatal:true}); }catch(e){} setTimeout(()=>{ try{c.close()}catch(e){} },300); return; }
+        c.pid=pid; c.kh=kh;
+        const old=conns.get(pid); conns.set(pid,c);
+        if(old && old!==c){ old.__replaced=true; try{ old.send({kicked:1}); }catch(e){} setTimeout(()=>{ try{ old.close(); }catch(e){} },150); }
+        // 同じ人（同じ鍵）が別IDで残した「幽霊」だけ片付ける。名前が同じだけの他人は消さない
+        const ghost=kh && S.players.find(p=>p.kh===kh && p.id!==pid && p.id!==myId && !p.bot && !liveConn(p.id));
+        if(ghost){ const gc=conns.get(ghost.id); if(gc){ conns.delete(ghost.id); try{gc.close()}catch(e){} } hostApply(myId,{t:"drop",id:ghost.id}); }
+        try{ c.send({avatars:{...avatars}}); }catch(e){}
+        const r=hostApply(pid,{t:"join",name:String(m.name||""),kh});
+        if(typeof r==="string"){ try{ c.send({err:r, fatal:true}); }catch(e){} }
+        else if(r===false) sendState(c);
+      });
+      return;
     }
     if(!c.pid) return;
     if(m.t==="avatar"){
@@ -2745,8 +2821,9 @@ function setupHostConn(c){
       for(const x of conns.values()) if(x.open) try{ x.send({avatars:{[c.pid]:d}}); }catch(e){}
       render(); return;
     }
-    if(m.t==="disc"||m.t==="drop"||m.t==="prune"||m.t==="bot") return;   // ホスト専用の操作は受け付けない
-    const r=hostApply(c.pid,m);
+    if(["disc","drop","prune","bot","join"].includes(m.t)) return;   // ホスト専用の操作は受け付けない
+    const {kh:_drop, at:_at, ...am}=m;          // 時刻はホストの時計を使う（連投制限をすり抜けさせない）
+    const r=hostApply(c.pid,am);
     if(typeof r==="string"){ try{ c.send({err:r, fatal:m.t==="join"}); }catch(e){} }
     else if(r===false && m.t==="join") sendState(c);
   });
@@ -2789,7 +2866,7 @@ function becomeHost(state, gen, claimOnly){
       if(p2pHost){ netBar(""); return; }                       // シグナリング再接続
       p2pHost=true; rejoinUntil=0; clearTimeout(loadTimer); netBar(""); hostWatchdog(gen); conn=null;
       if(state){ S=state; lastBotV=-1; render(); driveBots(); broadcast(); toast("ホストを引き継いだよ"); scheduleAbsentCheck(gen); }
-      else { S=blankRoom(myId); hostApply(myId,{t:"join",name:myName}); }
+      else { S=blankRoom(myId); hostApply(myId,{t:"join",name:myName,kh:myKh}); }
     });
     p.on("connection", setupHostConn);
     p.on("disconnected", ()=>{ if(gen!==joinGen) return; setTimeout(()=>{ try{ if(!p.destroyed && p.disconnected) p.reconnect(); }catch(e){} },1000); });
@@ -2842,7 +2919,7 @@ function tryTakeover(gen){
   if(takeoverTried) return false;
   const waited=Date.now()-rejoinStart;
   // ゲーム中：バックアップ役だけが完全な状態を持っているので引き継ぐ
-  if(backupState && backupState.phase==="play" && (!S || backupState.v>=S.v-1)){
+  if(backupState && (backupState.phase==="play" || backupState.aborted) && (!S || backupState.v>=S.v-1)){
     takeoverTried=true;
     const st=clone(backupState), oldHost=st.host; st.host=myId;
     applyAction(st,myId,{t:"drop",id:oldHost});
@@ -2872,7 +2949,7 @@ function connectHost(p,gen){
   c.on("open", ()=>{
     if(c!==conn) return;
     clearTimeout(to); clientTries=0; rejoinUntil=0; takeoverTried=false; lastHostMsg=Date.now(); netBar("");
-    c.send({t:"join",name:myName,id:myId}); if(myAvatar) c.send({t:"avatar",data:myAvatar});
+    c.send({t:"join",name:myName,id:myId,key:roomSecret}); if(myAvatar) c.send({t:"avatar",data:myAvatar});
     clientHeartbeat(gen,c);
     // 回線レベルで切れたらすぐ気づく（突然死の検知を速く）
     const pc=c.peerConnection;
@@ -2886,15 +2963,15 @@ function connectHost(p,gen){
     if(gen!==joinGen || !m || c!==conn) return;               // 古い接続からのメッセージは無視
     lastHostMsg=Date.now();
     if(m.pong) return;
-    if(m.kicked){ kicked=true; failP2P("別の画面で入り直したので、こっちは切断したよ"); return; }
+    if(m.kicked){ kicked=true; failP2P(m.kicked===2?"ホストに部屋から退出させられた":"別の画面で入り直したので、こっちは切断したよ"); return; }
     if(m.avatars){ mergeAvatars(m.avatars); return; }
-    if(m.backup) backupState=m.backup; else if(m.state) backupState=null;
-    if(m.state){ applyState(m.state); lastHostId=S.host; clearTimeout(loadTimer); }
+    if(m.backup) backupState=cleanIn(m.backup); else if(m.state) backupState=null;
+    if(m.state){ applyState(cleanIn(m.state)); lastHostId=S.host; clearTimeout(loadTimer); }
     else if(m.err){ if(m.fatal) failP2P(m.err); else toast(m.err); }
     else if(m.migrate){
       rejoinUntil=Date.now()+40000; rejoinStart=Date.now();
-      if(m.migrate===myId && m.full){ const st=m.full; c.__handoff=true; conn=null; try{c.close()}catch(e){} try{p.destroy()}catch(e){} becomeHost(st,gen); }
-      else netBar("ホストが交代中…");
+      if(m.migrate===myId && m.full){ const st=cleanIn(m.full); c.__handoff=true; conn=null; try{c.close()}catch(e){} try{p.destroy()}catch(e){} becomeHost(st,gen); }
+      else { backupState=null; takeoverTried=true; netBar("ホストが交代中…"); }   // 次のホストは決まってるので、自分は引き継がない
     }
   });
   c.on("close", ()=>{
@@ -2911,7 +2988,7 @@ function startRejoin(gen){
   const old=conn; conn=null; if(old){ old.__handoff=true; try{old.close()}catch(e){} }
   try{ peer && peer.destroy(); }catch(e){}
   // バックアップ役は、まず部屋IDを取りにいく（ホストが生きていれば即失敗して普通に再接続）
-  if(backupState && backupState.phase==="play" && !takeoverTried){
+  if(backupState && (backupState.phase==="play" || backupState.aborted) && !takeoverTried){
     takeoverTried=true;
     const st=clone(backupState), oldHost=st.host; st.host=myId;
     applyAction(st,myId,{t:"drop",id:oldHost});
@@ -2969,7 +3046,7 @@ function mergeInto(st, gen){
 }
 // 合流を受ける側：自分の部屋が空っぽ同然なら、相手のゲームを採用して今いる人を追加する
 function handleMerge(c,m){
-  const st=m.full;
+  const st=cleanIn(m.full);
   const valid = st && Array.isArray(st.players) && Array.isArray(st.order) && st.hands && typeof st.hands==="object";
   const mineEmpty = S && S.phase==="lobby" && S.round===0;
   const theirsBetter = valid && (st.round>0 || st.players.filter(p=>!p.bot).length > S.players.filter(p=>!p.bot).length);
@@ -2977,16 +3054,20 @@ function handleMerge(c,m){
   const extra=S.players.filter(p=>!p.bot && !st.players.some(q=>q.id===p.id));
   st.host=myId; S=st; lastBotV=-1;
   const me=S.players.find(p=>p.id===myId);
-  if(me){ me.bot=false; me.away=false; delete me.offline; } else hostApply(myId,{t:"join",name:myName});
-  for(const p of extra) if(p.id!==myId) hostApply(p.id,{t:"join",name:p.name});
+  if(me){ me.bot=false; me.away=false; delete me.offline; } else hostApply(myId,{t:"join",name:myName,kh:myKh});
+  for(const p of extra) if(p.id!==myId) hostApply(p.id,{t:"join",name:p.name,kh:p.kh});
   render(); broadcast(); driveBots(); scheduleAbsentCheck(joinGen);
   try{ c.send({mergeOk:1}); }catch(e){}
   toast("元の部屋に合流したよ");
 }
 
-function joinP2P(name, pass){
-  myName=name; roomPeerId="pdfg-"+hash(normPass(pass)); clientTries=0; rejoinUntil=0; kicked=false; backupState=null; takeoverTried=false;
+async function joinP2P(name, pass){
+  myName=name; clientTries=0; rejoinUntil=0; kicked=false; backupState=null; takeoverTried=false;
   const gen=++joinGen;
+  // 部屋ID＝合言葉のSHA-256（合言葉そのものは外に出ない）
+  roomPeerId="pdfg2-"+(await sha256hex("room|"+normPass(pass))).slice(0,40);
+  await prepRoomKey(roomPeerId);
+  if(gen!==joinGen) return;
   becomeHost(null, gen);
   clearTimeout(loadTimer);
   loadTimer=setTimeout(()=>{ if(!S && gen===joinGen) failP2P("接続がタイムアウトしました（電波を確認してもう一度）"); },30000);
@@ -3210,7 +3291,9 @@ function renderEntry(){
         <input id="nm" class="grow" maxlength="10" value="${esc(nm)}" placeholder="ぽすまん" style="width:auto;min-width:0">
       </div>
       ${myAvatar?`<div style="margin-top:4px"><button class="small ghost" id="avdel">アイコンを外す</button></div>`:`<div class="note" style="margin-top:4px">📷 をタップで写真をアイコンにできるよ</div>`}
-      <label>合言葉</label><input id="pw" maxlength="30" value="${esc(hashPass)}" placeholder="例: いがりんご" autocomplete="off">
+      <label>合言葉</label>
+      <div class="row" style="flex-wrap:nowrap"><input id="pw" class="grow" maxlength="40" value="${esc(hashPass)}" placeholder="例: いがりんご" autocomplete="off" style="width:auto;min-width:0"><button class="small ghost" id="pwgen" title="ランダムな合言葉を作る">🎲</button></div>
+      <div class="note pwnote" id="pwnote"></div>
       <div class="btnrow"><button id="go" ${net?"":"disabled"}>部屋に入る</button></div>
       <div class="err" id="err">${esc(errMsg||netMsg)}</div>
       <div class="btnrow" style="margin-top:4px"><button class="ghost" id="solo">CPUとひとりで遊ぶ</button></div>
@@ -3229,6 +3312,12 @@ function renderEntry(){
     store.set("dfg_name",n); joinOnline(n,p);
   };
   pwI.onkeydown=e=>{ if(e.key==="Enter") document.getElementById("go").click(); };
+  const pn=document.getElementById("pwnote");
+  const pwCheck=()=>{ const v=normPass(pwI.value); const weak=v.length>0 && ([...v].length<6 || /^(\d+|[a-z]+|あいうえお|test|てすと)$/.test(v));
+    pn.innerHTML = !v ? "ネッ友と遊ぶなら 🎲 で作った合言葉がおすすめ（知らない人と部屋がかぶらない）" : weak ? "⚠ 短い合言葉は知らない人と部屋がかぶるかも。6文字以上か 🎲 がおすすめ" : "🔐 いい感じ。この合言葉を知ってる人だけが入れるよ";
+    pn.classList.toggle("warn",weak); };
+  pwI.addEventListener("input",()=>{ hashKeep=pwI.value; pwCheck(); }); pwCheck();
+  document.getElementById("pwgen").onclick=()=>{ pwI.value=randomPass(); hashKeep=pwI.value; pwCheck(); sfx("tap"); };
   document.getElementById("solo").onclick=()=>{ ensureAudio(); const n=nmI.value.trim()||"あなた"; store.set("dfg_name",n); startSolo(n); };
 }
 
@@ -3241,7 +3330,8 @@ function playerChips(){
     else if(p.offline) meta = "📴 再接続待ち…";
     else if(p.id===S.host) meta = mode==="online" ? "👑 ホスト" : "";
     else meta = p.ready ? `<span class="ok">✅ 準備OK</span>` : "準備中…";
-    const rm = host && S.phase!=="play" && p.id!==myId ? `<button class="small ghost" data-rm="${p.id}" style="margin-top:4px">外す</button>`
+    const rm = host && mode==="online" && !p.bot && p.id!==myId ? `<button class="small ghost danger" data-kick="${p.id}" style="margin-top:4px">追い出す</button>`
+             : host && S.phase!=="play" && p.id!==myId ? `<button class="small ghost" data-rm="${p.id}" style="margin-top:4px">外す</button>`
              : p.id===myId ? `<button class="small ghost" data-avchg="1" style="margin-top:4px">📷 アイコン変更</button>` : "";
     return `<div class="pl ${p.id===myId?"me":""} ${p.ready?"ready":""}">
       ${bubbleHtml(p.id)}
@@ -3249,9 +3339,32 @@ function playerChips(){
       <div class="meta">${meta}</div>${rm}</div>`;
   }).join("")}</div>`;
 }
+// 2回タップで確定（誤タップ防止）
+function bindKick(root){
+  (root||document).querySelectorAll("[data-kick]").forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    if(!b.dataset.sure){ b.dataset.sure="1"; b.textContent="本当に？"; setTimeout(()=>{ if(b.isConnected){ delete b.dataset.sure; b.textContent="追い出す"; } },2500); return; }
+    act({t:"kick",id:b.dataset.kick});
+  });
+}
+function securityPanel(){
+  if(mode!=="online" || net!=="p2p") return "";
+  const host=isHost();
+  return `<div class="panel secpanel">
+    <div class="row" style="margin-bottom:6px"><b class="grow">🛡 セキュリティ</b>${host?"":'<span class="note">ホストが設定</span>'}</div>
+    <div class="rules">
+      <button class="rule ${S.locked?"on":""}" id="lockbtn" ${host?"":"disabled"}><b>🔒 部屋に鍵</b><small>新しい人が入れなくなる（今いる人は再接続OK）</small></button>
+      <button class="rule ${S.fair!==false?"on":""}" id="fairbtn" ${host&&S.phase!=="play"?"":"disabled"}><b>⚖ 公平モード</b><small>ホスト以外に手札を一切預けない（ホストが落ちたらそのラウンドは中止）</small></button>
+    </div>
+    <div class="note" style="margin-top:6px">通信は暗号化（WebRTC/DTLS）。同じ人かどうかは端末の鍵で確認してるから、名前をまねても席は乗っ取れない。追い出した人はこの部屋に戻れないよ。</div>
+  </div>`;
+}
 function bindChips(){
   app.querySelectorAll("[data-bot]").forEach(b=>b.onclick=()=>act({t:"tobot",id:b.dataset.bot}));
   app.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>act({t:"rm",id:b.dataset.rm}));
+  bindKick(app);
+  const lk=document.getElementById("lockbtn"); if(lk) lk.onclick=()=>{ act({t:"lock",v:!S.locked}); sfx("tap"); };
+  const fr=document.getElementById("fairbtn"); if(fr) fr.onclick=()=>{ act({t:"fair",v:S.fair===false}); sfx("tap"); };
   app.querySelectorAll("[data-avchg]").forEach(b=>b.onclick=()=>pickAvatar());
 }
 function rulesPanel(){
@@ -3337,6 +3450,7 @@ function renderLobby(){
     ${gamePanel()}
     ${mode==="online"?chatPreview():""}
     ${rulesPanel()}
+    ${securityPanel()}
     <div class="panel"><div class="note">${S.log.slice(-5).map(esc).join("<br>")}</div></div>
     <button class="ghost" id="leave">退出</button></div>`;
   bindChips(); bindRules(); bindSound(); bindInvite(); bindStart(false); bindChatBtn();
@@ -4070,6 +4184,9 @@ function menuHtml(){
     <div class="note" style="margin:10px 0">合言葉: <b>${esc(roomKey)}</b> ${inviteBtn()}</div>
     <div class="row" style="margin:6px 0"><span class="note grow">演出の強さ</span>${fxBtn()}</div>
     <div class="note"><b>このルール:</b> ${on.join(" / ")}</div>
+    ${isHost() && mode==="online" ? `<div class="note" style="margin-top:8px"><b>ホスト操作</b></div>
+      <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px"><button class="small ${S.locked?"":"ghost"}" id="lockbtn">${S.locked?"🔒 鍵かかってる（開ける）":"🔓 部屋に鍵をかける"}</button></div>
+      ${S.players.filter(p=>!p.bot && p.id!==myId).map(p=>`<div class="row" style="margin-top:4px"><span class="grow note">${esc(p.name)}</span><button class="small ghost danger" data-kick="${p.id}">追い出す</button></div>`).join("")}` : ""}
     ${watchers.length?`<div class="note" style="margin-top:6px"><b>観戦中:</b> ${watchers.map(p=>esc(p.name)).join("、")}（次のラウンドから参加）</div>`:""}
     <div class="note" style="margin-top:10px"><b>ログ</b><br>${S.log.map(esc).join("<br>")}</div>
     <div class="btnrow"><button class="ghost" id="leave">退出する（CPUが代わりに打つ）</button></div>
@@ -4081,7 +4198,8 @@ function bindMenu(){
   sh.onclick=e=>{ if(e.target===sh){ menuOpen=false; lastSig=""; render(); } };
   document.getElementById("closeMenu").onclick=()=>{ menuOpen=false; lastSig=""; render(); };
   document.getElementById("leave").onclick=()=>{ menuOpen=false; leave(); };
-  bindInvite(); bindFx();
+  bindInvite(); bindFx(); bindKick(sh);
+  const lk=document.getElementById("lockbtn"); if(lk) lk.onclick=()=>{ act({t:"lock",v:!S.locked}); sfx("tap"); };
 }
 
 function renderResult(){
@@ -4095,6 +4213,7 @@ function renderResult(){
     ${gamePanel()}
     ${mode==="online"?chatPreview():""}
     ${rulesPanel()}
+    ${securityPanel()}
     <button class="ghost" id="leave">退出</button></div>`;
   bindChips(); bindRules(); bindSound(); bindInvite(); bindStart(true); bindChatBtn();
   document.getElementById("leave").onclick=leave;
