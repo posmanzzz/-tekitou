@@ -687,6 +687,17 @@ body.wide .kchip .ks b{font-size:18px}
 .pwnote{margin-top:4px}.pwnote.warn{color:#ffb35a}
 button.danger{color:#ff8a8a;border-color:rgba(255,90,90,.5)}
 .secpanel .rules{grid-template-columns:1fr 1fr}
+
+.roomsp .rsec{margin:10px 0 4px;font-weight:800;color:#ffe9a8;font-size:13px}
+.roomsp .rsec small{background:rgba(255,210,58,.2);border-radius:99px;padding:1px 7px;margin-left:4px;font-size:11px}
+.rrow{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 10px;margin:4px 0;background:linear-gradient(180deg,rgba(40,28,60,.9),rgba(14,8,24,.9));border:1px solid rgba(255,210,58,.35);color:#fff;box-shadow:none;text-shadow:none;min-height:0}
+.rrow .ri{font-size:24px}.rrow .rt{flex:1;min-width:0;display:flex;flex-direction:column}
+.rrow .rt b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rrow .rt small{font-size:10px;color:#c9b98a;font-weight:400}
+.rrow .rn{font-weight:800;font-size:13px}
+.rph{font-size:10px;padding:2px 6px;border-radius:6px;background:#1f7a3a;color:#d8ffe0}.rph.play{background:#7a1f2a;color:#ffd8dc}
+.rrow.full{opacity:.5}
+.rpriv{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0}
+.rchip{font-size:11px;padding:3px 8px;border-radius:99px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15)}
 </style>
 </head>
 <body>
@@ -1587,6 +1598,7 @@ function applyAction(s, actor, a){
       else { s.players=s.players.filter(x=>x.id!==p.id); s.ranking=(s.ranking||[]).filter(x=>x!==p.id); r=true; }
       break;
     }
+    case "pub": if(host){ s.pub=!!a.v; if(typeof a.title==="string") s.title=safeText(a.title.trim()).slice(0,20); r=true; } break;
     case "lock": if(host){ s.locked=!!a.v; log(s, s.locked?"🔒 ホストが部屋に鍵をかけた":"🔓 部屋の鍵を開けた"); r=true; } break;
     case "fair": if(host && s.phase!=="play"){ s.fair=!!a.v; r=true; } break;
     case "kick": {
@@ -2586,6 +2598,7 @@ function loadScript(src){ return new Promise((res,rej)=>{ const s=document.creat
     net = window.Peer ? "p2p" : null;
   }
   netChecked=true; if(screen==="entry") render();
+  if(net==="p2p") dirStart();
 })();
 setTimeout(()=>{ if(!netChecked){ netChecked=true; if(screen==="entry") render(); } },10500);
 
@@ -3093,6 +3106,130 @@ async function handoffHost(){
   await sleep(500);
 }
 
+// =====================================================================
+// 部屋一覧（ロビー案内所）
+// 決まったID「案内所」を最初に取った人が一覧係になる。部屋のホストは自分の部屋を登録し、
+// 入口画面の人は一覧を取りにいく。一覧係がいなくなったら、残ってる誰かが自動で引き継ぐ。
+// 非公開部屋は「ゲーム・人数・状態」だけ載せる（合言葉や部屋IDは載せない）
+// =====================================================================
+const DIR_ID="pdfg2-annai-v1";
+const Dir={peer:null, conn:null, serving:false, rooms:new Map(), list:null, lastList:0, regKey:randHex(8), starting:false, retryT:0, subs:new Set()};
+function dirStart(){
+  if(net!=="p2p" || !window.Peer || Dir.peer || Dir.starting) return;
+  Dir.starting=true;
+  const p=new window.Peer(DIR_ID, PEER_OPTS());
+  p.on("open", ()=>{ Dir.starting=false; Dir.peer=p; Dir.serving=true; dirServe(); });
+  p.on("connection", c=>dirServeConn(c));
+  p.on("error", e=>{
+    if(e.type==="unavailable-id"){ try{p.destroy()}catch(_){} Dir.starting=false; dirClient(); }
+    else if(!Dir.serving){ try{p.destroy()}catch(_){} Dir.starting=false; dirRetry(); }
+  });
+  p.on("disconnected", ()=>{ setTimeout(()=>{ try{ if(!p.destroyed && p.disconnected) p.reconnect(); }catch(_){} },1500); });
+}
+function dirRetry(){ clearTimeout(Dir.retryT); Dir.retryT=setTimeout(()=>{ dirStop(); dirStart(); }, 800+Math.random()*2200); }
+function dirStop(){ try{ Dir.peer && Dir.peer.destroy(); }catch(e){} Dir.peer=null; Dir.conn=null; Dir.serving=false; Dir.starting=false; }
+function dirClient(){
+  const p=new window.Peer(PEER_OPTS()); Dir.peer=p; Dir.serving=false;
+  p.on("open", ()=>{
+    const c=p.connect(DIR_ID,{reliable:true}); 
+    const to=setTimeout(()=>{ if(!c.open){ dirRetry(); } },8000);
+    c.on("open", ()=>{ clearTimeout(to); Dir.conn=c; dirTick(true); });
+    c.on("data", m=>{ if(m && Array.isArray(m.rooms)){ Dir.list=cleanIn(m.rooms).filter(dirOkRoom).slice(0,80); Dir.lastList=Date.now(); dirRender(); } });
+    c.on("close", ()=>{ if(Dir.conn===c){ Dir.conn=null; dirRetry(); } });
+    c.on("error", ()=>{});
+  });
+  p.on("error", e=>{ if(e.type==="peer-unavailable" || !Dir.conn) dirRetry(); });
+  p.on("disconnected", ()=>{ setTimeout(()=>{ try{ if(!p.destroyed && p.disconnected) p.reconnect(); }catch(_){} },1500); });
+}
+const dirOkRoom = r => r && typeof r==="object" && typeof r.k==="string" && ["daifugo","uno","baba","shinkei"].includes(r.game) && Number.isFinite(r.n);
+// --- 一覧係の仕事 ---
+function dirServe(){ dirTick(true); }
+function dirServeConn(c){
+  c.on("data", m=>{
+    if(!m || typeof m!=="object") return;
+    const now=Date.now();
+    if(!c.rl || now-c.rl.t>10000) c.rl={t:now,n:0};
+    if(++c.rl.n>40) return;
+    if(m.t==="reg") dirRegister(m.room, c);
+    else if(m.t==="unreg" && typeof m.k==="string"){ const r=Dir.rooms.get(m.k); if(r && r.__c===c) Dir.rooms.delete(m.k); }
+    if(m.t==="list"||m.t==="reg"){ try{ c.send({rooms:dirSnapshot()}); }catch(e){} }
+  });
+  c.on("close", ()=>{ for(const [k,r] of Dir.rooms) if(r.__c===c) Dir.rooms.delete(k); });
+  c.on("error", ()=>{});
+}
+function dirRegister(room, c){
+  room=cleanIn(room); if(!dirOkRoom(room)) return;
+  const mine=[...Dir.rooms.values()].filter(r=>r.__c===c && r.k!==room.k).length;
+  if(mine>=2 || (Dir.rooms.size>=80 && !Dir.rooms.has(room.k))) return;
+  const r={k:String(room.k).slice(0,24), pub:!!room.pub, game:room.game, n:Math.max(0,Math.min(10,room.n|0)), max:10, phase:room.phase==="play"?"play":"lobby", locked:!!room.locked, at:Date.now(), __c:c};
+  if(r.pub){ r.title=String(room.title||"").slice(0,20); r.pass=String(room.pass||"").slice(0,40); r.host=String(room.host||"").slice(0,10); if(!r.pass) return; }
+  Dir.rooms.set(r.k, r);
+}
+function dirSnapshot(){
+  const now=Date.now(), out=[];
+  for(const [k,r] of Dir.rooms){ if(now-r.at>25000){ Dir.rooms.delete(k); continue; } const {__c,at,...x}=r; out.push(x); }
+  return out;
+}
+// --- 定期処理：自分の部屋を登録＋一覧を取る ---
+function myRoomEntry(){
+  if(!(mode==="online" && net==="p2p" && p2pHost && S)) return null;
+  const pub=!!S.pub;
+  const e={k:Dir.regKey, pub, game:S.game, n:S.players.length, phase:S.phase, locked:!!S.locked};
+  if(pub){ e.title=S.title||((S.players.find(p=>p.id===myId)||{}).name||"")+"の部屋"; e.pass=roomKey; e.host=(S.players.find(p=>p.id===myId)||{}).name||""; }
+  return e;
+}
+let dirLastReg=0;
+function dirTick(force){
+  if(net!=="p2p") return;
+  if(!Dir.peer && !Dir.starting){ dirStart(); return; }
+  const wantList = screen==="entry";
+  const e=myRoomEntry(), now=Date.now();
+  if(Dir.serving){
+    if(e) dirRegister(e, "self"); 
+    if(wantList){ Dir.list=dirSnapshot(); Dir.lastList=now; dirRender(); }
+    return;
+  }
+  const c=Dir.conn; if(!c || !c.open) return;
+  try{
+    if(e && (force || now-dirLastReg>8000)){ c.send({t:"reg",room:e}); dirLastReg=now; }
+    else if(wantList) c.send({t:"list"});
+  }catch(err){}
+}
+function dirUnreg(){
+  if(Dir.serving){ Dir.rooms.delete(Dir.regKey); return; }
+  if(Dir.conn && Dir.conn.open) try{ Dir.conn.send({t:"unreg",k:Dir.regKey}); }catch(e){}
+}
+setInterval(()=>dirTick(false), 4000);
+// --- 入口画面の一覧 ---
+const GAME_ICON={daifugo:"🃏",uno:"🎴",baba:"🤡",shinkei:"🧠"};
+function dirListHtml(){
+  if(net!=="p2p") return "";
+  const L=Dir.list;
+  if(!L) return `<div class="note">部屋を探してる…</div>`;
+  const pubs=L.filter(r=>r.pub).sort((a,b)=>(a.phase==="lobby"?0:1)-(b.phase==="lobby"?0:1) || b.n-a.n);
+  const privs=L.filter(r=>!r.pub && r.k!==Dir.regKey);
+  const ph=r=>r.phase==="play"?`<span class="rph play">プレイ中</span>`:`<span class="rph">募集中</span>`;
+  return `
+    <div class="rsec">🌐 公開部屋 <small>${pubs.length}</small></div>
+    ${pubs.length?pubs.map(r=>`<button class="rrow ${r.locked||r.n>=r.max?"full":""}" data-rpass="${esc(r.pass)}" ${r.locked||r.n>=r.max?"disabled":""}>
+      <span class="ri">${GAME_ICON[r.game]||"🃏"}</span><span class="rt"><b>${esc(r.title||"部屋")}</b><small>${GAME_NAMES[r.game]||""} · ホスト ${esc(r.host||"?")}</small></span>
+      <span class="rn">${r.n}/${r.max}${r.locked?" 🔒":""}</span>${ph(r)}</button>`).join(""):`<div class="note">今は公開部屋がないよ。部屋を作ってロビーで「公開」にすると、ここに出る</div>`}
+    <div class="rsec">🔐 非公開部屋 <small>${privs.length}</small></div>
+    ${privs.length?`<div class="rpriv">${privs.slice(0,12).map(r=>`<span class="rchip">${GAME_ICON[r.game]||"🃏"} ${r.n}人 · ${r.phase==="play"?"プレイ中":"待機中"}${r.locked?" 🔒":""}</span>`).join("")}</div><div class="note">合言葉を知ってる人だけ入れる</div>`:`<div class="note">なし</div>`}`;
+}
+function dirRender(){
+  const el=document.getElementById("rooms"); if(!el || screen!=="entry") return;
+  el.innerHTML=dirListHtml(); bindDirList();
+}
+function bindDirList(){
+  document.querySelectorAll("[data-rpass]").forEach(b=>b.onclick=()=>{
+    const pw=document.getElementById("pw"), nm=document.getElementById("nm"), er=document.getElementById("err");
+    if(pw) pw.value=b.dataset.rpass; hashKeep=b.dataset.rpass;
+    const n=nm?nm.value.trim():""; if(!n){ if(er) er.textContent="先になまえを入れてね"; nm&&nm.focus(); return; }
+    ensureAudio(); store.set("dfg_name",n); joinOnline(n,b.dataset.rpass);
+  });
+}
+
 // ---- 入退室 ----
 function resetRoomLocals(){
   lastFxN=null; lastBotV=-1; lastTurn=null; lastFieldSig=""; lastRound=-1; comboN=0; lastGhost=null; prevField=null;
@@ -3122,6 +3259,7 @@ function backToEntry(msg){
   mode=null; S=null; screen="entry"; sel.clear(); errMsg=msg||""; document.body.classList.remove("revmode","ebmode","lockmode"); render();
 }
 async function leave(){
+  if(p2pHost) dirUnreg();
   if(mode==="online"){
     if(net==="db") await act({t:"leave"});
     else if(p2pHost) await handoffHost();
@@ -3298,7 +3436,9 @@ function renderEntry(){
       <div class="err" id="err">${esc(errMsg||netMsg)}</div>
       <div class="btnrow" style="margin-top:4px"><button class="ghost" id="solo">CPUとひとりで遊ぶ</button></div>
       ${howto?`<div class="note" style="margin-top:10px">${howto}</div>`:""}
-    </div></div>`;
+    </div>
+    ${net==="p2p"?`<div class="panel roomsp"><div class="row"><b class="grow">🏠 立ってる部屋</b><button class="small ghost" id="rref">更新</button></div><div id="rooms">${dirListHtml()}</div></div>`:""}
+    </div>`;
   errMsg="";
   bindSound(); bindFx();
   const nmI=document.getElementById("nm"), pwI=document.getElementById("pw"), er=document.getElementById("err");
@@ -3318,6 +3458,8 @@ function renderEntry(){
     pn.classList.toggle("warn",weak); };
   pwI.addEventListener("input",()=>{ hashKeep=pwI.value; pwCheck(); }); pwCheck();
   document.getElementById("pwgen").onclick=()=>{ pwI.value=randomPass(); hashKeep=pwI.value; pwCheck(); sfx("tap"); };
+  bindDirList();
+  const rr=document.getElementById("rref"); if(rr) rr.onclick=()=>{ sfx("tap"); dirTick(true); };
   document.getElementById("solo").onclick=()=>{ ensureAudio(); const n=nmI.value.trim()||"あなた"; store.set("dfg_name",n); startSolo(n); };
 }
 
@@ -3353,9 +3495,11 @@ function securityPanel(){
   return `<div class="panel secpanel">
     <div class="row" style="margin-bottom:6px"><b class="grow">🛡 セキュリティ</b>${host?"":'<span class="note">ホストが設定</span>'}</div>
     <div class="rules">
+      <button class="rule ${S.pub?"on":""}" id="pubbtn" ${host?"":"disabled"}><b>${S.pub?"🌐 公開部屋":"🔐 非公開部屋"}</b><small>${S.pub?"入口の一覧から誰でも入れる（合言葉も公開）":"合言葉を知ってる人だけ。一覧には人数だけ出る"}</small></button>
       <button class="rule ${S.locked?"on":""}" id="lockbtn" ${host?"":"disabled"}><b>🔒 部屋に鍵</b><small>新しい人が入れなくなる（今いる人は再接続OK）</small></button>
       <button class="rule ${S.fair!==false?"on":""}" id="fairbtn" ${host&&S.phase!=="play"?"":"disabled"}><b>⚖ 公平モード</b><small>ホスト以外に手札を一切預けない（ホストが落ちたらそのラウンドは中止）</small></button>
     </div>
+    ${S.pub?`<label>部屋の名前（一覧に出る）</label><input id="rtitle" maxlength="20" value="${esc(S.title||"")}" placeholder="${esc(((S.players.find(p=>p.id===S.host)||{}).name||"")+"の部屋")}" ${host?"":"disabled"}>`:""}
     <div class="note" style="margin-top:6px">通信は暗号化（WebRTC/DTLS）。同じ人かどうかは端末の鍵で確認してるから、名前をまねても席は乗っ取れない。追い出した人はこの部屋に戻れないよ。</div>
   </div>`;
 }
@@ -3365,6 +3509,8 @@ function bindChips(){
   bindKick(app);
   const lk=document.getElementById("lockbtn"); if(lk) lk.onclick=()=>{ act({t:"lock",v:!S.locked}); sfx("tap"); };
   const fr=document.getElementById("fairbtn"); if(fr) fr.onclick=()=>{ act({t:"fair",v:S.fair===false}); sfx("tap"); };
+  const pb=document.getElementById("pubbtn"); if(pb) pb.onclick=()=>{ act({t:"pub",v:!S.pub}); sfx("tap"); setTimeout(()=>dirTick(true),50); };
+  const rt=document.getElementById("rtitle"); if(rt && isHost()) rt.onchange=()=>{ act({t:"pub",v:true,title:rt.value}); setTimeout(()=>dirTick(true),50); };
   app.querySelectorAll("[data-avchg]").forEach(b=>b.onclick=()=>pickAvatar());
 }
 function rulesPanel(){
