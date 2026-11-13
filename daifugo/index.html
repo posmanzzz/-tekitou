@@ -464,8 +464,9 @@ const st = (r, rev) => r === 16 ? 100 : (rev ? 18 - r : r);
 
 const RULE_DEFS = [
   {k:"eight",   name:"8切り",     desc:"8を出すと場が流れる"},
-  {k:"rev",     name:"革命",      desc:"同じ数字4枚以上で強さ逆転"},
-  {k:"seq",     name:"階段",      desc:"同じマーク3枚以上の連番"},
+  {k:"rev",     name:"革命",      desc:"同じ数字4枚以上 or 4枚以上の階段で逆転"},
+  {k:"seq",     name:"階段",      desc:"同じマーク3枚以上の連番（JOKERで穴埋めOK）"},
+  {k:"stair",   name:"階段縛り",  desc:"数字が1つずつ続くと次も+1しか出せない"},
   {k:"spade3",  name:"スペ3返し", desc:"単体ジョーカーに♠3が勝つ"},
   {k:"eb",      name:"11バック",  desc:"Jで場が流れるまで逆転"},
   {k:"shibari", name:"縛り",      desc:"同じマークが続くと固定"},
@@ -477,11 +478,11 @@ const RULE_DEFS = [
   {k:"exchange",name:"カード交換",desc:"2戦目から階級で交換"},
 ];
 const MAX_PLAYERS = 10;
-const DEFAULT_RULES = {eight:true,rev:true,seq:true,spade3:true,eb:false,shibari:false,five:false,miyako:false,foul:false,seven:false,bomb:false,exchange:true,jokers:1};
+const DEFAULT_RULES = {eight:true,rev:true,seq:true,spade3:true,eb:false,shibari:false,five:false,miyako:false,foul:false,seven:false,bomb:false,stair:false,exchange:true,jokers:1};
 const PRESETS = {
   "定番": {...DEFAULT_RULES},
-  "全部盛り": {eight:true,rev:true,seq:true,spade3:true,eb:true,shibari:true,five:true,miyako:true,foul:true,seven:true,bomb:true,exchange:true,jokers:2},
-  "シンプル": {eight:false,rev:false,seq:false,spade3:false,eb:false,shibari:false,five:false,miyako:false,foul:false,seven:false,bomb:false,exchange:false,jokers:1},
+  "全部盛り": {eight:true,rev:true,seq:true,spade3:true,eb:true,shibari:true,five:true,miyako:true,foul:true,seven:true,bomb:true,stair:true,exchange:true,jokers:2},
+  "シンプル": {eight:false,rev:false,seq:false,spade3:false,eb:false,shibari:false,five:false,miyako:false,foul:false,seven:false,bomb:false,stair:false,exchange:false,jokers:1},
 };
 
 function titlesFor(n){
@@ -512,10 +513,16 @@ function analyze(cards, rules){
   const nonJ = ps.filter(p=>p.r!==16);
   const n = cards.length;
   if(nonJ.every(p=>p.r===(nonJ[0]||{}).r)) return {type:"group", n, rank: nonJ.length? nonJ[0].r : 16};
-  if(rules.seq && n>=3 && nonJ.length===n && ps.every(p=>p.s===ps[0].s)){
-    const rs = ps.map(p=>p.r).sort((a,b)=>a-b);
-    for(let i=1;i<rs.length;i++) if(rs[i]!==rs[i-1]+1) return null;
-    return {type:"seq", n, min:rs[0], max:rs[rs.length-1]};
+  if(rules.seq && n>=3 && nonJ.length>=1 && nonJ.every(p=>p.s===nonJ[0].s)){
+    const rs = nonJ.map(p=>p.r).sort((a,b)=>a-b);
+    for(let i=1;i<rs.length;i++) if(rs[i]===rs[i-1]) return null;          // 同じ数字が2枚あったら階段じゃない
+    const jk = n-nonJ.length, gaps = (rs[rs.length-1]-rs[0]+1) - rs.length;
+    if(gaps>jk) return null;                                                  // JOKERで埋めきれない
+    let min=rs[0], max=rs[rs.length-1], extra=jk-gaps;
+    while(extra>0 && max<15){ max++; extra--; }                               // 余ったJOKERは上に伸ばす（強い方に）
+    while(extra>0 && min>3){ min--; extra--; }
+    if(extra>0) return null;
+    return {type:"seq", n, min, max};
   }
   return null;
 }
@@ -537,6 +544,10 @@ function canPlay(s, pid, cards){
       if(!sp3 && !(st(info.rank,rev) > st(f.rank,rev))) return "場より強くない";
     } else {
       if(!(rev ? info.min < f.min : info.min > f.min)) return "場より強くない";
+    }
+    if(s.stair && info.type==="group" && info.rank!==16){
+      const need=nextRank(f.rank, rev);
+      if(info.rank!==need) return `階段縛り中（次は ${need?RANK_LABEL(need):"なし"} だけ）`;
     }
     if(s.lock){
       const su = suitsOf(cards);
@@ -562,7 +573,9 @@ function nextFrom(s, pid, skipPassed){
 function log(s,msg){ s.log.push(msg); if(s.log.length>10) s.log=s.log.slice(-10); }
 function fx(s, k, extra){ (s.fxk=s.fxk||[]).push({k, ...(extra||{})}); }
 function cardText(c){const p=parse(c); return p.r===16?"🃏":SUIT_SYM[p.s]+RANK_LABEL(p.r);}
-function clearField(s){ s.field=null; s.passed=[]; s.eb=false; s.lock=null; }
+function clearField(s){ s.field=null; s.passed=[]; s.eb=false; s.lock=null; s.stair=false; }
+// 今の強さの向きで、rank の「1つ上」の数字（3〜2）。なければ null
+function nextRank(r, rev){ const t=st(r,rev)+1; for(let x=3;x<=15;x++) if(st(x,rev)===t) return x; return null; }
 
 function blankRoom(hostId){
   return {v:0, host:hostId, players:[], phase:"lobby", order:[], hands:{}, counts:{}, field:null, rev:false, eb:false, lock:null,
@@ -623,12 +636,15 @@ function doPlay(s,pid,cards){
   log(s,`${nameOf(s,pid)}: ${cards.map(cardText).join(" ")}`);
   fx(s,"play",{id:pid,cards});
   const has = r => cards.some(c=>parse(c).r===r);
-  if(R.rev && info.type==="group" && info.n>=4){ s.rev=!s.rev; log(s, s.rev?"⚡ 革命！":"⚡ 革命返し！"); fx(s,"rev",{on:s.rev, who:nameOf(s,pid)}); }
+  if(R.rev && info.n>=4){ s.rev=!s.rev; log(s, s.rev?"⚡ 革命！":"⚡ 革命返し！"); fx(s,"rev",{on:s.rev, who:nameOf(s,pid)}); }
   if(R.shibari && prev && !s.lock){
     const a=suitsOf(cards), b=suitsOf(prev.cards);
     if(a.length===cards.length && b.length===prev.cards.length && a.join()===b.join()){
       s.lock=a; log(s,`🔒 縛り ${a.map(x=>SUIT_SYM[x]).join("")}`); fx(s,"lock",{suits:a.map(x=>SUIT_SYM[x]).join(""), red:a.some(x=>x==="H"||x==="D"), who:nameOf(s,pid)});
     }
+  }
+  if(R.stair && prev && !s.stair && info.type==="group" && prev.type==="group" && info.rank!==16 && prev.rank!==16 && nextRank(prev.rank, effRev(s))===info.rank){
+    s.stair=true; { const nx=nextRank(info.rank,effRev(s)); log(s,`🪜 階段縛り（次は ${nx?RANK_LABEL(nx):"なし"}）`); } fx(s,"stair",{who:nameOf(s,pid)});
   }
   const eight = R.eight && has(8);
   if(R.eb && !eight && has(11)){ s.eb=!s.eb; log(s,"↩ 11バック"); fx(s,"eb",{on:s.eb, who:nameOf(s,pid)}); }
@@ -779,10 +795,13 @@ function candidates(s,pid){
   for(let j=1;j<=jokers.length;j++) if(sizes.includes(j)) cands.push(jokers.slice(0,j));
   if(R.seq && (!f || f.type==="seq")){
     for(const su of SUITS){
-      const rs=hand.filter(c=>c[0]===su && !isJoker(c)).map(c=>parse(c).r).sort((a,b)=>a-b);
+      const have=new Set(hand.filter(c=>c[0]===su && !isJoker(c)).map(c=>parse(c).r));
       const lens = f ? [f.n] : [3,4,5];
-      for(const L of lens) for(let i=0;i+L<=rs.length;i++){
-        const w=rs.slice(i,i+L); if(w[L-1]-w[0]===L-1) cands.push(w.map(r=>su+r));
+      for(const L of lens) for(let a=3;a+L-1<=15;a++){
+        const present=[], missing=[];
+        for(let r=a;r<a+L;r++) (have.has(r)?present:missing).push(r);
+        if(!present.length || missing.length>jokers.length) continue;
+        cands.push(present.map(r=>su+r).concat(jokers.slice(0,missing.length)));
       }
     }
   }
@@ -948,7 +967,7 @@ const store = {get(k){try{return localStorage.getItem(k)}catch(e){return null}},
 const sstore = {get(k){try{return sessionStorage.getItem(k)}catch(e){return null}}, set(k,v){try{sessionStorage.setItem(k,v)}catch(e){}}};
 const clone = o => JSON.parse(JSON.stringify(o));
 
-window.__dfg={analyze,canPlay,doPlay,doPass,startRound,botMove,blankRoom,applyAction,viewFor,activeOf,effRev,DEFAULT_RULES,PRESETS};
+window.__dfg={nextRank,analyze,canPlay,doPlay,doPass,startRound,botMove,blankRoom,applyAction,viewFor,activeOf,effRev,DEFAULT_RULES,PRESETS};
 if(window.__DFG_TEST__) return;
 
 // =====================================================================
@@ -1044,8 +1063,17 @@ const PFX=(()=>{
     parts.push(p);
     if(!running){ running=true; last=performance.now(); requestAnimationFrame(loop); }
   }
+  let lastFrameAt=0;
   function loop(now){
-    const dtMs=now-last; last=now; const dt=Math.min(.05,dtMs/1000);
+    lastFrameAt=performance.now();
+    try{ step(now); }
+    catch(e){ parts.length=0; ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cv.width,cv.height); running=false; return; }   // 何があっても固まらない
+  }
+  // 万一ループが止まっていたら再開する（裏タブ明けなど）
+  setInterval(()=>{ if(running && !document.hidden && performance.now()-lastFrameAt>600){ last=performance.now(); requestAnimationFrame(loop); } },700);
+  function step(now){
+    // rAFの時刻は追加した瞬間より前のことがある → 経過時間は0以上に丸める（マイナスだと輪の半径が負になってエラー）
+    const dtMs=Math.max(0, Math.min(50, now-last)); last=Math.max(last, now); const dt=dtMs/1000;
     ftAvg=ftAvg*.9+dtMs*.1;
     if(ftAvg>26) quality=Math.max(.3,quality*.97); else if(ftAvg<19) quality=Math.min(1,quality*1.01);
     ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cv.width,cv.height);
@@ -1058,11 +1086,11 @@ const PFX=(()=>{
       parts[n++]=p;
       p.vx*=p.drag; p.vy=p.vy*p.drag+p.g*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.rot+=p.vr*dt;
       const k=p.t/p.life;
-      ctx.globalAlpha = k>p.fadeFrom ? (1-k)/(1-p.fadeFrom) : 1;
+      ctx.globalAlpha = Math.max(0, Math.min(1, k>p.fadeFrom ? (1-k)/(1-p.fadeFrom) : 1));
       const sz=p.size*(p.shrink?(1-k*.7):1);
       if(p.kind==="ring"){
-        const r=p.r0+(p.r1-p.r0)*(1-Math.pow(1-k,3));
-        ctx.globalAlpha=1-k; ctx.setTransform(DPR,0,0,DPR,0,0);
+        const r=Math.max(0.1, p.r0+(p.r1-p.r0)*(1-Math.pow(1-Math.max(0,k),3)));
+        ctx.globalAlpha=Math.max(0,Math.min(1,1-k)); ctx.setTransform(DPR,0,0,DPR,0,0);
         ctx.strokeStyle=p.color; ctx.lineWidth=p.w*(1-k*.6); ctx.beginPath(); ctx.arc(p.x,p.y,r,0,6.283); ctx.stroke();
         continue;
       }
@@ -1079,7 +1107,7 @@ const PFX=(()=>{
     }
     parts.length=n;
     ctx.globalAlpha=1; ctx.setTransform(1,0,0,1,0,0);
-    if(n) requestAnimationFrame(loop); else { running=false; ctx.clearRect(0,0,cv.width,cv.height); }
+    if(n) requestAnimationFrame(loop); else { running=false; ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,cv.width,cv.height); }
   }
   return {add, count:()=>parts.length, q:()=>quality};
 })();
@@ -1421,6 +1449,7 @@ function playFx(e){
     case "eight": sweepField(-1); setTimeout(()=>{ sfx("eight"); slashGhost(lastGhost); bigSlash(); comboN=0; if(dopa()){ kanji("斬","blue",180,.27); hitStop(1.5); rgbSplit(); } cutin("eight","✂ 8切り", e.who?`${e.who}　場を斬った！`:"", 1100); },420); break;
     case "eb": setTimeout(()=>{ sfx("eb"); flash("#6a7bff"); kanji("逆","blue",180,.27); cutin("eb", e.on===false?"11バック解除":"↩ 11バック", e.on===false?"強さが元通り":"場が流れるまで強さ逆転", 1200); },380); break;
     case "lock": setTimeout(()=>{ chainSlam(); kanji("封","green",180,.27); cutin(e.red?"lockr":"lock", `🔒 縛り ${e.suits}`, `${e.suits} しか出せない！`, 1200); },380); break;
+    case "stair": setTimeout(()=>{ chainSlam(); kanji("段","gold",180,.27); cutin("lock","🪜 階段縛り","数字が1つずつしか上げられない！",1200); },380); break;
     case "skip": setTimeout(()=>{ sfx("skip"); speedSwipe(); kanji("飛","gold",180,.27); cutin("skip", `⏩ ${e.n}人スキップ`, e.who||"", 1000); },380); break;
     case "finish": setTimeout(()=> e.place===1 ? winFx(e) : placeFx(e), 350); break;
     case "foul": sfx("foul"); darkPulse(); shake(true); kanji("罰","dark",180,.27); cutin("dark", "🚫 反則上がり", `${e.who}は最下位…`, 1300); break;
@@ -2317,7 +2346,7 @@ function renderGame(){
   const seats = others.map((id,i)=>{ const p=S.players.find(x=>x.id===id); return p?seatHtml(p,pos[i][0],pos[i][1],small):""; }).join("");
 
   const fin=S.finished.indexOf(myId), lost=S.losers.includes(myId);
-  const tags = [rev?`<span class="tag">${S.rev?"革命中":"逆転中"}</span>`:"", S.eb?`<span class="tag eb">11バック</span>`:"", S.lock?`<span class="tag lock">縛り ${S.lock.map(x=>SUIT_SYM[x]).join("")}</span>`:""].join("");
+  const tags = [rev?`<span class="tag">${S.rev?"革命中":"逆転中"}</span>`:"", S.eb?`<span class="tag eb">11バック</span>`:"", S.lock?`<span class="tag lock">縛り ${S.lock.map(x=>SUIT_SYM[x]).join("")}</span>`:"", S.stair&&S.field?`<span class="tag lock">🪜階段縛り 次は${nextRank(S.field.rank,rev)?RANK_LABEL(nextRank(S.field.rank,rev)):"なし"}</span>`:""].join("");
   const lastLogs = S.log.slice(-2);
   const myTitle = S.titles && S.titles[myId];
   const fieldTop = others.length>5 ? 50 : others.length>=4 ? 47 : 42;
