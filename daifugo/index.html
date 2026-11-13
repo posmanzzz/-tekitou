@@ -573,7 +573,10 @@ body.wide .sevenpick button,body.wide .bombpick button{font-size:17px}
 
 /* ===== 背景のスポットライト ===== */
 #spots{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
-#spots i{position:absolute;bottom:-20%;width:60vmax;height:140vmax;transform-origin:50% 100%;background:linear-gradient(to top,rgba(255,220,120,.16),rgba(255,220,120,.05) 55%,transparent 80%);clip-path:polygon(44% 100%,56% 100%,100% 0,0 0);will-change:transform;filter:blur(2px)}
+#spots{contain:strict}
+#spots i{position:absolute;bottom:-10%;width:36vmax;height:115vmax;transform-origin:50% 100%;background:linear-gradient(to top,rgba(255,220,120,.16),rgba(255,220,120,.05) 55%,transparent 80%);clip-path:polygon(44% 100%,56% 100%,100% 0,0 0)}
+/* スマホはGPUメモリが少ないので、大きい動くレイヤーは置かない（描画が1コマ抜ける原因になる） */
+@media (pointer:coarse),(max-width:899px){#spots{display:none}}
 #spots i:nth-child(1){left:-12vmax;animation:spotA 9s ease-in-out infinite}
 #spots i:nth-child(2){right:-12vmax;background:linear-gradient(to top,rgba(200,120,255,.15),rgba(120,200,255,.05) 55%,transparent 80%);animation:spotB 11s ease-in-out infinite}
 @keyframes spotA{0%,100%{transform:rotate(-28deg)}50%{transform:rotate(22deg)}}
@@ -582,8 +585,9 @@ body.revmode #spots i{background:linear-gradient(to top,rgba(255,40,90,.2),trans
 /* 自分の番は手札がふわふわ */
 .hand.myturn .card:not(.deal):not(.sel):not(.dim),.hand.myturn .ucard:not(.deal):not(.sel):not(.dim){animation:bob 2.2s ease-in-out infinite;animation-delay:calc(var(--i,0) * -.14s)}
 @keyframes bob{0%,100%{translate:0 0}50%{translate:0 -5px}}
-.seat.turn .avawrap{animation:turnpulse 1.2s ease-in-out infinite}
-@keyframes turnpulse{0%,100%{filter:drop-shadow(0 0 0 rgba(255,214,90,0))}50%{filter:drop-shadow(0 0 12px rgba(255,214,90,.9))}}
+.seat.turn .avawrap::after,.seat.aimed .avawrap::after{content:"";position:absolute;inset:-6px;border-radius:12px;box-shadow:0 0 14px 4px rgba(255,214,90,.85);pointer-events:none;z-index:1;animation:glowO 1.2s ease-in-out infinite}
+.seat.aimed .avawrap::after{box-shadow:0 0 14px 4px rgba(255,59,92,.9);animation-duration:.6s}
+@keyframes glowO{0%,100%{opacity:.15}50%{opacity:1}}
 .torb{position:absolute;left:0;top:0;width:22px;height:22px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff,#7cf0ff 45%,rgba(0,120,255,.2) 70%);box-shadow:0 0 18px #7cf0ff,0 0 40px rgba(124,240,255,.6);pointer-events:none}
 .torb.me{background:radial-gradient(circle at 35% 30%,#fff,#ffd23a 45%,rgba(255,120,0,.2) 70%);box-shadow:0 0 18px #ffd23a,0 0 44px rgba(255,200,60,.7)}
 /* カード裏（トランプ） */
@@ -600,10 +604,10 @@ body.revmode #spots i{background:linear-gradient(to top,rgba(255,40,90,.2),trans
 .bfan.mine .tback.can:hover{top:-8px}
 .bpile{font-size:11px;color:#c9b98a}
 .bpile b{color:#ffe066;font-size:14px}
-.hand .card.aimed{box-shadow:0 0 0 3px #ff3b5c,0 0 22px 6px rgba(255,59,92,.85);animation:aimed .5s ease-in-out infinite alternate}
+.hand .card.aimed{box-shadow:0 0 0 3px #ff3b5c,0 0 22px 6px rgba(255,59,92,.85)}
 .hand .card.aimed::after{content:"👆";position:absolute;left:50%;top:-34px;transform:translateX(-50%) rotate(180deg);font-size:26px;animation:none}
-@keyframes aimed{from{filter:brightness(1)}to{filter:brightness(1.18)}}
-.seat.aimed .avawrap{animation:turnpulse .6s ease-in-out infinite}
+
+
 .sstat.aim{background:#7a0018;color:#ffd0d6}
 .breveal{position:absolute;left:50%;top:58%;display:flex;flex-direction:column;align-items:center;gap:8px;perspective:600px}
 .breveal b{font-family:var(--mincho);font-size:22px;color:#fff;text-shadow:0 2px 6px #000}
