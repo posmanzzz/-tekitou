@@ -24,7 +24,7 @@ const RULE_DEFS = [
   {k:"foul",    name:"反則上がり",desc:"JK・2・8で上がると最下位"},
   {k:"seven",   name:"7渡し",     desc:"7の枚数だけ次の人に渡す"},
   {k:"bomb",    name:"12ボンバー",desc:"Qの枚数だけ数字を指定→全員捨てる"},
-  {k:"exchange",name:"カード交換",desc:"2戦目から階級で交換"},
+  {k:"exchange",name:"カード交換",desc:"2戦目から。貧民の強いカードは自動で取られ、富豪は好きなカードを選んで渡す"},
 ];
 const MAX_PLAYERS = 10;
 const DEFAULT_RULES = {eight:true,rev:true,seq:true,spade3:true,eb:false,shibari:false,five:false,miyako:false,foul:false,seven:false,bomb:false,stair:false,exchange:true,jokers:1};
@@ -79,6 +79,7 @@ function analyze(cards, rules){
 // 出せるなら ""、出せないなら理由
 function canPlay(s, pid, cards){
   if(s.phase!=="play" || s.turn!==pid) return "あなたの番じゃない";
+  if(xchgOn(s)) return "カード交換が終わるまで待ってね";
   if(s.pending) return "選択中";
   if(!cards.length) return "カードを選んでね";
   const hand = s.hands[pid]||[];
@@ -158,22 +159,70 @@ function startRound(s){
   const prev = s.prevFinish||[];
   const same = prev.length===ids.length && prev.every(id=>ids.includes(id));
   s.sameMembers = same && s.round>1;
-  if(s.sameMembers && s.rules.exchange && ids.length>=2){
-    const N=ids.length;
-    const pairs=[[prev[0],prev[N-1],N>=3?2:1]];
-    if(N>=4) pairs.push([prev[1],prev[N-2],1]);
-    for(const [rich,poor,k] of pairs){
-      const strong = sortHand(s.hands[poor],false).slice(-k);
-      const weak = sortHand(s.hands[rich].filter(c=>!strong.includes(c)),false).slice(0,k);
-      s.hands[poor]=s.hands[poor].filter(c=>!strong.includes(c)).concat(weak);
-      s.hands[rich]=s.hands[rich].filter(c=>!weak.includes(c)).concat(strong);
-      log(s,`交換: ${nameOf(s,poor)}→${nameOf(s,rich)} ${k}枚`);
-    }
-  }
+  s.xchg=null;
   s.turn = s.sameMembers ? prev[prev.length-1] : (ids.find(id=>s.hands[id].includes("D3")) || ids[0]);
-  log(s,`${nameOf(s,s.turn)} から開始`);
+  if(s.sameMembers && s.rules.exchange && ids.length>=2){
+    // 貧民側の強いカードは自動で取り上げ（ジョーカーが最強）。富豪側は「もらったカードを見てから」好きなカードを選んで返す（xchgGive）
+    const N=ids.length;
+    const specs=[[prev[0],prev[N-1],N>=3?2:1]];
+    if(N>=4) specs.push([prev[1],prev[N-2],1]);
+    s.xchg={on:true, pairs:[]};
+    for(const [rich,poor,k] of specs){
+      if(rich===poor) continue;
+      const took = byStrength(s.hands[poor]).slice(-k);
+      s.hands[poor]=s.hands[poor].filter(c=>!took.includes(c));
+      s.hands[rich]=s.hands[rich].concat(took);
+      s.xchg.pairs.push({rich, poor, k, ok:false, took, gave:null});
+      log(s,`交換: ${nameOf(s,rich)} が ${nameOf(s,poor)} から${k}枚を召し上げ`);
+      fx(s,"xtake",{from:poor, to:rich, n:k, priv:{ids:[poor,rich], cards:took.slice()}});
+    }
+    if(!s.xchg.pairs.length) s.xchg=null;
+  }
   s.phase="play";
+  if(s.xchg) xchgAdvance(s);
+  else log(s,`${nameOf(s,s.turn)} から開始`);
 }
+
+// ---- カード交換（2戦目以降）----
+// s.xchg = {on, pairs:[{rich,poor,k,ok,took,gave}]}。on=true の間は誰もカードを出せない。took/gave は当事者2人にだけ見せる（viewFor）。
+const xchgOn = s => !!(s && s.xchg && s.xchg.on);
+// 強さ順（弱→強）。ジョーカー最強、同じ強さはマーク順→文字列で決める（決定的）
+function byStrength(h){
+  return h.slice().sort((a,b)=>{const A=parse(a),B=parse(b);return st(A.r,false)-st(B.r,false)||SUITS.indexOf(A.s)-SUITS.indexOf(B.s)||(a<b?-1:a>b?1:0);});
+}
+function xchgDo(s,P,cards){
+  s.hands[P.rich]=s.hands[P.rich].filter(c=>!cards.includes(c));
+  s.hands[P.poor]=s.hands[P.poor].concat(cards);
+  P.gave=cards.slice(); P.ok=true;
+  log(s,`🎁 ${nameOf(s,P.rich)} → ${nameOf(s,P.poor)} にカードを渡した`);
+  fx(s,"xgive",{from:P.rich, to:P.poor, n:P.k, priv:{ids:[P.rich,P.poor], cards:cards.slice()}});
+  xchgCheckDone(s);
+  return true;
+}
+function xchgGive(s,pid,cards){
+  const P = xchgOn(s) && s.phase==="play" ? s.xchg.pairs.find(x=>x.rich===pid && !x.ok) : null;
+  if(!P) return "今は渡せない";
+  const h=s.hands[pid]||[];
+  if(new Set(cards).size!==cards.length || cards.length!==P.k || !cards.every(c=>h.includes(c))) return `${P.k}枚選んでね`;
+  return xchgDo(s,P,cards);
+}
+function xchgCheckDone(s){
+  if(!xchgOn(s) || !s.xchg.pairs.every(P=>P.ok)) return;
+  s.xchg.on=false;
+  log(s,`交換おわり！ ${nameOf(s,s.turn)} から開始`);
+  fx(s,"xdone",{who:s.turn});
+}
+// CPU・離席の人が渡す番なら、いちばん弱いカードをすぐ渡す（人間がCPUに替わった時もここで拾うので、交換が詰まらない）
+function xchgAdvance(s){
+  if(!xchgOn(s)) return;
+  for(const P of s.xchg.pairs){
+    if(P.ok) continue;
+    const pl=s.players.find(p=>p.id===P.rich);
+    if(!pl || pl.bot) xchgDo(s,P,byStrength(s.hands[P.rich]).slice(0,P.k));
+  }
+  xchgCheckDone(s);
+}
+function xchgPending(s,pid){ return xchgOn(s) ? s.xchg.pairs.find(x=>x.rich===pid && !x.ok)||null : null; }
 
 function endRound(s){
   const rank = s.finished.concat(activeOf(s), s.losers.slice().reverse());
@@ -313,6 +362,7 @@ function botPending(s){
 
 function doPass(s,pid){
   if(s.phase!=="play" || s.turn!==pid) return "あなたの番じゃない";
+  if(xchgOn(s)) return "カード交換が終わるまで待ってね";
   if(s.pending) return "選択中";
   if(!s.field) return "親はパスできない";
   s.passed.push(pid);
@@ -336,7 +386,7 @@ function combos(arr,k){
   rec(0,[]); return out;
 }
 function candidates(s,pid){
-  if(s.pending || s.turn!==pid) return [];
+  if(s.pending || s.turn!==pid || xchgOn(s)) return [];
   const hand=s.hands[pid]||[], R=s.rules;
   const jokers=hand.filter(isJoker);
   const byRank={};
@@ -805,6 +855,7 @@ function replaceId(s, oldId, newId){
   if(s.field && s.field.by===oldId) s.field.by=newId;
   if(s.pending){ if(s.pending.pid===oldId) s.pending.pid=newId; if(s.pending.to===oldId) s.pending.to=newId; }
   if(s.after && s.after.pid===oldId) s.after.pid=newId;
+  if(s.xchg) for(const P of s.xchg.pairs){ if(P.rich===oldId) P.rich=newId; if(P.poor===oldId) P.poor=newId; }
   if(s.u){
     if(s.u.drew && s.u.drew.pid===oldId) s.u.drew.pid=newId;
     if(s.u.pending && s.u.pending.pid===oldId) s.u.pending.pid=newId;
@@ -836,6 +887,7 @@ function botStep(s,pid){
   if(s.game==="uno") return unoBot(s,pid);
   if(s.game==="baba") return babaBot(s,pid);
   if(s.game==="shinkei") return shinkeiBot(s,pid);
+  if(xchgOn(s)) return "カード交換中";
   if(s.pending) return botPending(s);
   const mv=botMove(s,pid);
   const h0=sortHand(s.hands[pid]||[],effRev(s));
@@ -958,7 +1010,7 @@ function applyActionInner(s, actor, a){
     case "rm": if(host && s.phase!=="play" && a.id!==actor){ const n=s.players.length; s.players=s.players.filter(p=>p.id!==a.id); s.ranking=s.ranking.filter(x=>x!==a.id); r=s.players.length!==n; } break;
     case "tobot": if(host && s.phase==="play" && a.id!==s.host){ const p=s.players.find(x=>x.id===a.id); if(p&&!p.bot){ p.bot=true; p.away=true; log(s,`${p.name} をCPUに交代`); r=true; } } break;
     case "game": if(host && s.phase!=="play" && typeof a.g==="string" && Object.prototype.hasOwnProperty.call(GAME_NAMES,a.g) && s.game!==a.g){
-      s.game=a.g; s.ranking=[]; s.titles={}; s.prevFinish=[]; s.round=0; s.u=null; s.b=null; s.k=null;
+      s.game=a.g; s.ranking=[]; s.titles={}; s.prevFinish=[]; s.round=0; s.u=null; s.b=null; s.k=null; s.xchg=null;
       log(s,`🎮 ゲームを「${GAME_NAMES[a.g]}」に変更`); fx(s,"game",{g:a.g}); r=true; } break;
     case "urules": if(host && s.phase!=="play" && isObj(a.rules)){
       const nr={...(s.urules||UNO_DEFAULT)};
@@ -1011,6 +1063,7 @@ function applyActionInner(s, actor, a){
       r=true; break;
     }
     case "give": { const c=s.game==="daifugo" ? strList(a.cards,60) : null; if(c) r=doGive(s,actor,c); break; }
+    case "xgive": { const c=s.game==="daifugo" ? strList(a.cards,60) : null; if(c) r=xchgGive(s,actor,c); break; }
     case "bomb": if(s.game==="daifugo" && Array.isArray(a.ranks) && a.ranks.length<=20) r=doBomb(s,actor,a.ranks); break;
     case "play": { const c=s.game==="daifugo" ? strList(a.cards,60) : null; if(c) r=doPlay(s,actor,c); break; }
     case "pass": if(s.game==="uno"){ r=uPass(s,actor); break; } if(s.game!=="daifugo") break; r=doPass(s,actor); break;
@@ -1022,8 +1075,11 @@ function applyActionInner(s, actor, a){
     }
     case "auto": {   // ホスト専用: 制限時間切れの人間に代わって1手打つ。2回続けて切れたら離席扱い（CPUが代打ち）
       if(!host || s.phase!=="play" || typeof a.id!=="string") break;
-      const p=s.players.find(x=>x.id===a.id); if(!p || p.bot || s.turn!==p.id || !s.order.includes(p.id)) break;
-      r=autoTurn(s,p.id);
+      const p=s.players.find(x=>x.id===a.id); if(!p || p.bot || !s.order.includes(p.id)) break;
+      if(s.game==="daifugo" && xchgOn(s)){           // カード交換中の時間切れ: 渡す側の人が、いちばん弱いカードを自動で渡す
+        const P=xchgPending(s,p.id); if(!P) break;
+        r=xchgDo(s,P,byStrength(s.hands[p.id]).slice(0,P.k));
+      } else { if(s.turn!==p.id) break; r=autoTurn(s,p.id); }
       if(r===true){
         p.to=(p.to||0)+1; log(s,`⏰ ${p.name} の時間切れ（かわりに出したよ）`);
         if(p.to>=2){ p.afk=true; p.bot=true; p.away=true; log(s,`💤 ${p.name} は離席扱い（動くまでCPUが代打ち）`); fx(s,"afk",{who:p.name,id:p.id}); }
@@ -1033,6 +1089,7 @@ function applyActionInner(s, actor, a){
     case "back": { const p=s.players.find(x=>x.id===actor); if(p && p.afk){ afkClear(s,p); r=true; } break; }
   }
   if(r===true && me0 && !NOT_SELF_ACTS.includes(a.t)){ const p=s.players.find(x=>x.id===actor); if(p && (p.afk || p.to)) afkClear(s,p); }
+  if(r===true && s.game==="daifugo" && xchgOn(s)) xchgAdvance(s);      // CPU/離席になった人の分を渡す・全員済んだら開始
   if(r===true){
     s.v=(s.v||0)+1; s.updatedAt=Date.now();
     if(a.t!=="chat" && a.t!=="throw") s.gv=(s.gv||0)+1;          // ゲームに関わる変化の番号（チャットだけなら増えない）
@@ -1047,6 +1104,7 @@ function viewFor(s,pid){
   const v=JSON.parse(JSON.stringify(s)); v.hands={[pid]:s.hands[pid]||[]};
   if(v.u){ v.u.deckN=v.u.deck.length; v.u.deck=[]; if(v.u.drew && v.u.drew.pid!==pid) v.u.drew={pid:v.u.drew.pid}; }      // 山札の並びと「引いたカード」は本人以外に送らない
   if(v.k){ const K=v.k; v.k.board=K.board.map((c,i)=> K.taken[i]!==undefined || K.up.includes(i) || (K.miss&&K.miss.includes(i)) ? c : null); delete v.k.mem; }
+  if(v.xchg) v.xchg.pairs=v.xchg.pairs.map(P=> P.rich===pid||P.poor===pid ? P : {rich:P.rich,poor:P.poor,k:P.k,ok:P.ok});     // 交換したカードは当事者2人だけ
   if(v.fx && v.fx.k) v.fx.k=v.fx.k.map(e=>{ if(!e.priv) return e; const x={...e}; if(!e.priv.ids.includes(pid)) delete x.priv; return x; });
   return v;
 }
@@ -1101,6 +1159,8 @@ function normState(r){
   } else S.field=null;
   S.pending=isObj(r.pending) ? {type:r.pending.type==="bomb"?"bomb":"seven", n:int(r.pending.n,0,0,20), pid:idv(r.pending.pid)||"", to:idv(r.pending.to)} : null;
   S.pendingQ=Array.isArray(r.pendingQ) ? r.pendingQ.filter(isObj).slice(0,6).map(q=>({type:q.type==="bomb"?"bomb":"seven", n:int(q.n,0,0,20)})) : [];
+  S.xchg=isObj(r.xchg) && Array.isArray(r.xchg.pairs) ? {on:r.xchg.on===true, pairs:r.xchg.pairs.filter(isObj).slice(0,4).map(P=>({rich:idv(P.rich), poor:idv(P.poor), k:int(P.k,1,1,2), ok:P.ok===true,
+      ...(Array.isArray(P.took)?{took:cards(P.took,2)}:{}), ...(Array.isArray(P.gave)?{gave:cards(P.gave,2)}:P.gave===null?{gave:null}:{})})).filter(P=>P.rich&&P.poor)} : null;
   S.after=isObj(r.after) ? {pid:idv(r.after.pid)||"", eight:r.after.eight===true, five:int(r.after.five,0,0,9)} : null;
   S.log=Array.isArray(r.log) ? r.log.slice(-12).map(x=>str(x,140)) : [];
   S.rules={}; for(const k of Object.keys(DEFAULT_RULES)) S.rules[k]= k==="jokers" ? ([0,1,2].includes(isObj(r.rules)&&r.rules.jokers)?r.rules.jokers:DEFAULT_RULES.jokers) : (isObj(r.rules)?r.rules[k]===true:DEFAULT_RULES[k]);
@@ -1206,6 +1266,8 @@ function sfx(k){
     case "turn": tone(1047,.12,"sine",.1); tone(1568,.18,"sine",.08,.1); break;
     case "deal": for(let i=0;i<6;i++) noise(.04,.1,i*.05,2500); break;
     case "chat": tone(1200,.06,"sine",.06); tone(1600,.08,"sine",.05,.06); break;
+    case "xtake": noise(.12,.18,0,1200); tone(320,.28,"sawtooth",.07,0,110); break;
+    case "xgive": [660,880,1100].forEach((f,i)=>tone(f,.14,"triangle",.07,i*.07)); break;
     case "seven": [700,900].forEach((f,i)=>tone(f,.12,"triangle",.08,i*.08)); break;
     case "bomb": noise(.6,.3,0,80); tone(90,.6,"sawtooth",.12,0,40); break;
     case "fanfare": [[523,0],[659,.12],[784,.24],[1047,.36],[784,.52],[1047,.62],[1319,.74]].forEach(([f,t])=>{ tone(f,.32,"square",.05,t); tone(f/2,.32,"triangle",.06,t); }); break;
@@ -2003,6 +2065,22 @@ function playFx(e){
       if(dopa()){ kanji("爆","red",190,.27); hitStop(2); rgbSplit(700); setTimeout(()=>shockwave("#fff"),250); setTimeout(()=>shake(true),500); rain(["💥","🔥","💨"],30,2000); }
       setTimeout(()=>{ const sm=document.createElement("div"); sm.className="smoke"; fxLayer.appendChild(sm); setTimeout(()=>sm.remove(),1600); },200);
       cutin("bomb", "💣 12ボンバー", `${e.ranks} が全員の手札から消滅！`, 1400); break;
+    // カード交換（2戦目〜）。カードの中身は priv（当事者2人だけ）にある。当事者以外には「何枚・誰から誰へ」だけ
+    case "xtake": {   // 献上: 貧民側の強いカードが富豪側へ
+      sfx("xtake"); passFlyBacks(e.from,e.to,e.n);
+      const cs=e.priv&&e.priv.cards;
+      if(e.from===myId){ vib([60,40,100]); if(dopa()) kanji("献上","dark",undefined,.27); cutin("dark","💸 献上…",`${xTitle(e.to)}に ${cs?xcList(cs):e.n+"枚"} を取られた`,1300); }
+      else if(e.to===myId){ if(dopa()) kanji("献上","gold",undefined,.27); cutin("win","👑 献上！",`${xTitle(e.from)}から ${cs?xcList(cs):e.n+"枚"} が届いた`,1300); }
+      else if(!xMine()){ if(dopa()) kanji("献上","gold",undefined,.27); cutin("skip","💸 献上",`${xTitle(e.from)} → ${xTitle(e.to)}　${e.n}枚`,1000); }
+      else floatText(e.to,`💸+${e.n}`);
+      break; }
+    case "xgive": {   // 下賜: 富豪側が選んだカードを貧民側へ
+      sfx("xgive"); passFlyBacks(e.from,e.to,e.n);
+      const cs=e.priv&&e.priv.cards;
+      if(e.to===myId){ vib([30,30,60]); if(dopa()) kanji("下賜","gold",undefined,.27); cutin("seven","🎁 下賜",`${xTitle(e.from)}から ${cs?xcList(cs):e.n+"枚"} をもらった`,1300); }
+      else if(e.from===myId){ floatText(e.to,`🎁 下賜 ${e.n}枚`); }
+      else floatText(e.to,`🎁 下賜+${e.n}`);
+      break; }
     case "pending": if(S && ((S.pending && S.pending.pid===myId) || (S.u && S.u.pending && S.u.pending.pid===myId))){ sfx("turn"); vib(25); } break;
     case "join": sfx("chat"); if(e.who) toast(`${e.who} が入ってきた！`); break;
     case "round": sfx("deal"); cutin("round", e.game==="uno"?`🎴 UNO 第${e.n}回戦`:e.game==="baba"?`🤡 ババ抜き 第${e.n}回戦`:e.game==="shinkei"?`🧠 神経衰弱 第${e.n}回戦`:`第${e.n}ラウンド`, e.game==="shinkei"?"カードを並べたよ":"カードを配るよ", 1000); break;
@@ -2290,7 +2368,7 @@ const ICE_SERVERS = [
 // アプリのバージョンと通信プロトコル番号。PROTO はホストとクライアントで一致しないと入れない（PWAのキャッシュで古い版が混ざる対策）。
 // 通信の形（メッセージ名・状態の項目）を変えたら PROTO を1つ上げること。APP_VERSION は表示・不具合報告用。
 const APP_VERSION = "2026.11.14-sec1";
-const PROTO = 2;
+const PROTO = 3;
 // 「IPを隠す（リレー接続）」: オンにすると iceTransportPolicy:"relay" で、相手には中継サーバー（TURN）の住所だけが見える
 const relayOn = () => store.get("dfg_relay")==="1";
 function peerCfg(){ const cfg={iceServers:ICE_SERVERS}; if(relayOn()) cfg.iceTransportPolicy="relay"; return cfg; }
@@ -2326,7 +2404,7 @@ function backupPid(){ const p=S && S.players.find(x=>!x.bot && !x.offline && x.i
 function lobbyBackup(s){
   const b=clone(s);
   Object.assign(b,{phase:"lobby", aborted:true, hands:{}, counts:{}, order:[], turn:null, field:null, passed:[], finished:[], losers:[], ranking:[], titles:{},
-    pending:null, pendingQ:[], after:null, u:null, b:null, k:null, rev:false, eb:false, lock:null, stair:false, lastPlayer:null});
+    pending:null, pendingQ:[], after:null, xchg:null, u:null, b:null, k:null, rev:false, eb:false, lock:null, stair:false, lastPlayer:null});
   b.players=b.players.filter(p=>!(p.bot && p.away)); b.players.forEach(p=>{ p.ready=false; delete p.wait; });
   b.log=["⚠ ホストが落ちたので、このラウンドは中止になった"]; b.fx={n:(s.fx&&s.fx.n)||0,k:[]};
   return b;
@@ -2700,6 +2778,8 @@ async function handoffHost(){
 // =====================================================================
 const TM={pid:null, deadline:0};          // 表示用（この端末の時計）
 let HT={gv:-1, round:-1, actor:null, deadline:0, ext:false};   // ホスト専用
+const XT="*x";     // カード交換中の期限の持ち主（個人ではなく「交換ステップ」）
+function xchgPendingHumans(){ return S.xchg.pairs.filter(P=>!P.ok).map(P=>P.rich).filter(id=>{ const p=S.players.find(x=>x.id===id); return p && !p.bot && S.order.includes(id); }); }
 const HEAVY_FX=["finish","end","round","rev","bomb","eight","miyako","foul","kmatch","kmiss","ucolor","udraw","uzero","useven","afk","seven"];
 function timerActive(){ return mode==="online" && net==="p2p" && p2pHost && !!S && S.phase==="play" && S.tsec>0; }
 function timerGrace(){
@@ -2710,6 +2790,12 @@ function timerGrace(){
 }
 function timerSync(){
   if(!timerActive()){ HT.actor=null; if(mode==="online" && p2pHost) TM.pid=null; return; }
+  if(xchgOn(S)){   // カード交換: 渡す人（人間）全員が同じ期限。誰かが渡しても期限は延びない（時間切れは残りの人だけ弱いカードを自動で渡す）
+    const pend=xchgPendingHumans();
+    if(!pend.length){ HT={gv:S.gv, round:S.round, actor:null, deadline:0, ext:false}; TM.pid=null; return; }
+    if(HT.actor!==XT || HT.round!==S.round) HT={gv:-2, round:S.round, actor:XT, deadline:Date.now()+S.tsec*1000+timerGrace(), ext:false};
+    TM.pid=pend[0]; TM.deadline=HT.deadline; return;
+  }
   const p=S.players.find(x=>x.id===S.turn);
   if(!p || p.bot || p.away || !S.order.includes(p.id)){ HT={gv:S.gv, round:S.round, actor:null, deadline:0, ext:false}; TM.pid=null; return; }   // CPUの手番に期限はない
   if(HT.gv!==S.gv || HT.round!==S.round || HT.actor!==p.id) HT={gv:S.gv, round:S.round, actor:p.id, deadline:Date.now()+S.tsec*1000+timerGrace(), ext:false};
@@ -2718,7 +2804,7 @@ function timerSync(){
 function timerInfo(){
   timerSync();
   if(!timerActive() || !HT.actor) return {tr:null, tp:null};
-  return {tr:Math.max(0,HT.deadline-Date.now()), tp:HT.actor};
+  return {tr:Math.max(0,HT.deadline-Date.now()), tp:HT.actor===XT?TM.pid:HT.actor};
 }
 function timerRecv(tr,tp){
   if(typeof tr==="number" && Number.isFinite(tr) && tr>=0 && ID_OK(tp)){ TM.pid=tp; TM.deadline=Date.now()+Math.min(tr,125000); }
@@ -2734,6 +2820,7 @@ setInterval(()=>{
     if(now<HT.deadline) return;
     if(fxBusy() && !HT.ext){ HT.ext=true; HT.deadline=now+2500; TM.deadline=HT.deadline; return; }
     const id=HT.actor; HT.actor=null;           // 二重に撃たない（状態が変われば作り直される）
+    if(id===XT){ for(const pid of xchgPendingHumans()) hostApply(myId,{t:"auto",id:pid}); return; }
     hostApply(myId,{t:"auto",id});
   }catch(e){ pushErr("timer",e); }
 },400);
@@ -2741,6 +2828,7 @@ setInterval(()=>{
 // ---- 表示（席のカウントダウン / 自分の最後5秒の警告 / 離席表示） ----
 let tmLastSec=-1, tmTotal=30000, tmTotalPid=null, tmLastMs=0;
 function timerUi(){
+  if(TM.pid && S && xchgOn(S) && xchgPending(S,myId)) TM.pid=myId;      // 交換中は、渡す側の自分には自分のタイマーを見せる（期限は全員共通）
   const play = !!S && screen==="room" && mode==="online" && S.phase==="play" && TM.pid;
   document.querySelectorAll(".tmr,.tring").forEach(e=>{ if(!play || e.dataset.pid!==TM.pid) e.remove(); });
   const warn=document.getElementById("tmwarn");
@@ -2981,12 +3069,12 @@ let botKick=0;
 setInterval(()=>{   // CPUの手番なのに4秒以上動いていなければ再駆動
   if(!S || S.phase!=="play" || !isHost()) return;
   const cur=S.players.find(p=>p.id===S.turn);
-  if(cur && cur.bot && lastBotV===S.v && Date.now()-botKick>4000){ lastBotV=-1; driveBots(); }
+  if(cur && cur.bot && !xchgOn(S) && lastBotV===S.v && Date.now()-botKick>4000){ lastBotV=-1; driveBots(); }
 },2000);
 function driveBots(){
   if(!S || S.phase!=="play" || !isHost()) return;
   const cur=S.players.find(p=>p.id===S.turn);
-  if(!cur || !cur.bot || lastBotV===S.v) return;
+  if(!cur || !cur.bot || lastBotV===S.v || xchgOn(S)) return;       // カード交換中のCPUは、エンジンが渡し終えている（人間の選択待ちだけ）
   lastBotV=S.v; botKick=Date.now(); const v=S.v;
   setTimeout(()=>{
     if(!S || S.v!==v) return;
@@ -3930,7 +4018,7 @@ function settingsHtml(){
   </div></div>`;
 }
 const HELP={
-  daifugo:{t:"🃏 大富豪", basics:["手札を早く出し切った人が勝ち。1位が「大富豪」、最後が「大貧民」だよ。","場に出てるカードより強い、同じ枚数のカードを出していく。出せない・出したくないときは「パス」。","強さは 3 < 4 < … < K < A < 2 < JOKER。みんながパスすると場が流れて、最後に出した人が好きなカードから始められるよ。"]},
+  daifugo:{t:"🃏 大富豪", basics:["手札を早く出し切った人が勝ち。1位が「大富豪」、最後が「大貧民」だよ。","場に出てるカードより強い、同じ枚数のカードを出していく。出せない・出したくないときは「パス」。","強さは 3 < 4 < … < K < A < 2 < JOKER。みんながパスすると場が流れて、最後に出した人が好きなカードから始められるよ。","「カード交換」がオンなら、2戦目の最初に交換タイム。大貧民の一番強いカード2枚（貧民は1枚）は自動で大富豪（富豪）に取られる。もらった側は、もらったカードを見てから、好きなカードを同じ枚数ぶん選んで渡すよ（もらったカードを返してもOK）。全員が渡したらゲーム開始。"]},
   uno:{t:"🎴 UNO", basics:["今の場のカードと同じ色か、同じ数字・記号のカードを出していく。出せなければ山札から引いてね。","手札が残り1枚になったら「UNO!」を押そう。言い忘れると2枚ペナルティ（ルールがオンのとき）。","⊘スキップ・⇄リバース・+2・ワイルド（色を選べる）・+4 の特殊カードがあるよ。手札を先に0にした人の勝ち。"]},
   baba:{t:"🤡 ババ抜き", basics:["配られた時点で同じ数字のペアは自動で捨てる。","自分の番は、前の人の手札（裏向き）から1枚引く。ペアができたら捨てる。","手札がなくなったら上がり。最後にジョーカー（ババ）を持ってた人の負け。引かれそうなときは「シャッフル」で逃げよう。"]},
   shinkei:{t:"🧠 神経衰弱", basics:["裏向きのカードを2枚めくって、同じ数字ならゲットしてもう1回。","外れたら次の人へ。覚えてるカードが勝負だよ。","全部なくなったときに、一番たくさん取った人の勝ち。5人以上だとジョーカー2枚も入る（ジョーカー同士でペア）。"]},
@@ -3944,7 +4032,7 @@ function helpHtml(g){
     rules=`<h4>いま使ってるルール${g==="daifugo"?`（ジョーカー ${esc(R.jokers)}枚）`:""}</h4>` + (on.length ? `<dl class="rl">${on.map(d=>`<dt>${esc(d.name)}</dt><dd>${esc(d.desc)}</dd>`).join("")}</dl>` : `<div class="note">ハウスルールはなし。基本のルールだけで遊ぶよ。</div>`);
   }
   const touch = {
-    daifugo:["カードをタップで選ぶ → 「出す」。もう一度タップで選択を外せる。","カードを素早く2回タップ → 同じ数字で出せるカードをまとめて選ぶ（もう一度2回タップで外す）。","選んだカードを全部外したいときは「選択を解除」。"],
+    daifugo:["カードをタップで選ぶ → 「出す」。もう一度タップで選択を外せる。","カードを素早く2回タップ → 同じ数字で出せるカードをまとめて選ぶ（もう一度2回タップで外す）。","選んだカードを全部外したいときは「選択を解除」。","カード交換タイムは、渡すカードを枚数ぶんタップで選んで「渡す」。緑のふちのカードが、もらったカード。"],
     uno:["光ってるカードをタップで選ぶ → もう一度タップ（か「出す」）で出す。","出せないときは山札をタップで引く。引いたカードを出さないなら「パス」。","残り1枚になる前に「UNO!」ボタン。"],
     baba:["相手のカードを1枚タップ → もう一度タップ（か「引く」）で引く。","狙われたカードは光るよ。「シャッフル」で並べ替えて逃げよう。"],
     shinkei:["裏向きのカードをタップでめくる。2枚めくったら結果が出るよ。"],
@@ -4267,6 +4355,30 @@ function seatPos(k){
   for(let i=0;i<k;i++){ const t=i/(k-1), ang=Math.PI*(1-t); out.push([50+39*Math.cos(ang), Math.max(minY,40-28*Math.sin(ang))]); }
   return out;
 }
+// ---- カード交換（2戦目〜）の表示用 ----
+const xcText = c => { const q=parse(c); return q.r===16 ? "JOKER" : SUIT_SYM[q.s]+RANK_LABEL(q.r); };
+const xcList = cs => cs.map(xcText).join(" と ");
+const xTitle = id => (S.titles&&S.titles[id]) || nameOf(S,id);
+// 自分が交換の当事者なら {P, rich}（took/gave は当事者にしか届かない）
+function xMine(){ const X=S&&S.xchg; if(!X) return null; const P=X.pairs.find(q=>q.rich===myId||q.poor===myId); return P?{P, rich:P.rich===myId}:null; }
+function xchgBox(){
+  const X=S.xchg, m=xMine(), mini=cs=>`<div class="xcards">${cs.map(c=>cardEl(c,"xc")).join("")}</div>`;
+  let h=`<div class="xhead">🎁 カード交換</div>`;
+  if(m && !m.rich){
+    const P=m.P;
+    h+=`<div class="xline">${esc(xTitle(P.rich))}に <b>${esc(xcList(P.took||[]))}</b> を取られた…</div>${mini(P.took||[])}`;
+    h+= P.ok && P.gave ? `<div class="xline ok">${esc(xTitle(P.rich))}から <b>${esc(xcList(P.gave))}</b> をもらった</div>${mini(P.gave)}`
+                       : `<div class="xline wait">${esc(xTitle(P.rich))}が渡すカードを選んでる…</div>`;
+  } else if(m && m.rich){
+    const P=m.P;
+    h+=`<div class="xline">${esc(xTitle(P.poor))}から <b>${esc(xcList(P.took||[]))}</b> をもらった</div>${mini(P.took||[])}`;
+    h+= P.ok && P.gave ? `<div class="xline ok">${esc(xTitle(P.poor))}に <b>${esc(xcList(P.gave))}</b> を渡した${S.xchg.on?"（みんなを待ってるよ）":""}</div>${mini(P.gave)}`
+                       : `<div class="xline wait">手札に緑のふちで光ってるのが、もらったカード</div>`;
+  } else {
+    h+=`<div class="xline">${X.pairs.map(P=>`<span class="xst ${P.ok?"ok":""}">${esc(xTitle(P.rich))} ${esc(nameOf(S,P.rich))}：${P.ok?"渡した":"選んでる…"}</span>`).join("")}</div>`;
+  }
+  return `<div class="xbox">${h}</div>`;
+}
 function seatHtml(p,x,y,small){
   const fin=S.finished.indexOf(p.id), lost=S.losers.includes(p.id);
   const cnt = S.counts && S.counts[p.id]!==undefined ? S.counts[p.id] : (S.hands[p.id]||[]).length;
@@ -4275,13 +4387,14 @@ function seatHtml(p,x,y,small){
   let stat;
   if(fin>=0) stat=`<span class="sstat win">${fin+1}位 上がり</span>`;
   else if(lost) stat=`<span class="sstat lose">最下位</span>`;
+  else if(xchgPending(S,p.id)) stat=`<span class="sstat think">🎁 選択中</span>`;
   else if(S.pending && S.pending.pid===p.id) stat=`<span class="sstat think">${S.pending.type==="seven"?"🎁 選択中":"💣 選択中"}</span>`;
   else if(S.passed.includes(p.id)) stat=`<span class="sstat pass">パス · ${esc(cnt)}枚</span>`;
   else stat=`<span class="sstat">${esc(cnt)}枚</span>`;
   const title=S.titles&&S.titles[p.id];
   const tobot = isHost() && mode==="online" && !p.bot && fin<0 && !lost ? `<button class="small ghost" data-bot="${esc(p.id)}" style="margin-top:3px;padding:3px 6px;font-size:10px">CPU交代</button>` : "";
   const talk = bubbles[p.id] && Date.now()-bubbles[p.id].at<4500;
-  return `<div data-seat="${esc(p.id)}" class="seat ${small?(S.order.length>=9?"xs":"sm"):""} ${talk?"talk":""} ${S.turn===p.id?"turn":""} ${fin>=0||lost?"out":""}" style="left:${x}%;top:${y}%">
+  return `<div data-seat="${esc(p.id)}" class="seat ${small?(S.order.length>=9?"xs":"sm"):""} ${talk?"talk":""} ${S.turn===p.id&&!xchgOn(S)?"turn":""} ${fin>=0||lost?"out":""}" style="left:${x}%;top:${y}%">
     ${bubbleHtml(p.id)}
     <div class="plate">${p.away?"💤":""}${esc(p.name)}</div>
     <div class="avawrap"><div class="fan">${backs}</div>${avatar(p)}${title?`<span class="title ${title==="大富豪"?"gold":""}">${esc(title)}</span>`:""}</div>
@@ -4366,6 +4479,15 @@ function fitField(){
 function controls(){
   const myTurn=S.turn===myId, P=S.pending, cs=[...sel];
   const c={hint:"", label:"出す", enabled:false, pass:false, kind:"play", dim:null};
+  if(xchgOn(S)){
+    const m=xMine(), XP=xchgPending(S,myId);
+    if(XP){ c.kind="xgive"; c.label=`🎁 渡す（${cs.length}/${XP.k}）`; c.enabled=cs.length===XP.k;
+      c.hint= cs.length>XP.k ? `${esc(XP.k)}枚だけ選んでね（いま${esc(cs.length)}枚）` : `${esc(xTitle(XP.poor))}に渡すカードを${esc(XP.k)}枚選んでね`; return c; }
+    if(m && m.rich) c.hint="渡した！ ほかの人が選ぶのを待ってるよ";
+    else if(m) c.hint= m.P.ok ? "もらったカードは緑のふちで光ってるよ" : `${esc(xTitle(m.P.rich))}が渡すカードを選んでる…`;
+    else c.hint=`カード交換中…（${esc(S.xchg.pairs.filter(q=>!q.ok).map(q=>nameOf(S,q.rich)).join("、"))} が選んでる）`;
+    return c;
+  }
   if(P && P.pid===myId){
     if(P.type==="seven"){
       c.kind="give"; c.label=`🎁 渡す（${cs.length}/${P.n}）`; c.enabled=cs.length===P.n;
@@ -4388,7 +4510,10 @@ function controls(){
 function renderGame(){
   const rev=effRev(S);
   const myHand = mySort(S.hands[myId]||[], rev);
-  const myTurn = S.turn===myId;
+  const xon = xchgOn(S), XP = xon ? xchgPending(S,myId) : null, XM = xMine();
+  const gotSet = new Set(XM ? (XM.rich ? (XM.P.took||[]) : (XM.P.gave||[])) : []);       // もらったカード（手札にあるぶん）
+  const xshow = xon || !!(XM && S.lastPlayer===null);      // 交換中と、交換が終わってから最初の1枚が出るまでは、交換の記録を場に出す
+  const myTurn = S.turn===myId && !xon;
   const meP = S.players.find(p=>p.id===myId);
   const amIn = meP && !meP.away && S.order.includes(myId);
   [...sel].forEach(c=>{ if(!myHand.includes(c)) sel.delete(c); });
@@ -4398,9 +4523,10 @@ function renderGame(){
   const fsig = f ? f.cards.join()+f.by : "";
   const newField = fsig && fsig!==lastFieldSig; lastFieldSig=fsig;
   const newRound = S.round!==lastRound; lastRound=S.round;
-  const myMoment = myTurn && (!S.pending || S.pending.pid===myId);
+  if(newRound) sel.clear();
+  const myMoment = xon ? !!XP : myTurn && (!S.pending || S.pending.pid===myId);
   const turnStart = myTurn && !S.pending && lastTurn!==myId;
-  lastTurn=S.turn;
+  lastTurn = xon ? null : S.turn;
   const oldF=document.querySelector(".fieldcards");
   if(oldF && oldF.children.length) prevField={html:oldF.innerHTML, rect:oldF.getBoundingClientRect()};
 
@@ -4427,9 +4553,9 @@ function renderGame(){
       ${mode==="online"?chatBtn():""}${soundBtn("round")}<button class="round" id="menu" title="メニュー" aria-label="メニュー">≡</button>
     </div>
     ${seats}
-    <div class="field" style="top:${fieldTop}%">
+    <div class="field ${xshow?"xf":""}" style="top:${fieldTop}%">
       ${tags?`<div class="tags">${tags}</div>`:""}
-      ${f?`<div class="fieldcards">${f.cards.map(c=>cardEl(c)).join("")}</div><div class="fieldby">${esc(nameOf(S,f.by))}</div>`
+      ${xshow?xchgBox():f?`<div class="fieldcards">${f.cards.map(c=>cardEl(c)).join("")}</div><div class="fieldby">${esc(nameOf(S,f.by))}</div>`
          :`<div class="fieldby" style="opacity:.6">場は空っぽ</div>`}
     </div>
     ${amIn?`
@@ -4445,8 +4571,8 @@ function renderGame(){
         <div class="bb">${C.kind==="play"?`<button class="passbtn" id="pass" ${C.pass?"":"disabled"}>パス</button>`:""}<button id="play" ${C.enabled?"":"disabled"}>${C.label}</button></div>
       </div>
     </div>
-    ${myMoment?`<div class="ribbon" id="ribbon">${S.pending?"▶ 選んでね":"▶ あなたの番"}</div>`:""}
-    <div class="hand ${myMoment?"myturn":""}" id="hand" style="height:${HG.height}px">${myHand.map((c,i)=>cardEl(c,(sel.has(c)?"sel ":"")+(C.dim&&!C.dim.has(c)?"dim ":"")+(newRound?"deal":""),`--cw:${HG.cw}px;z-index:${HG.pos[i].z};transform:${handTf(HG.pos[i],sel.has(c)?24:0)};${newRound?`animation-delay:${i*40}ms`:""}`)).join("")}</div>`
+    ${myMoment?`<div class="ribbon" id="ribbon">${xon?"▶ 渡すカードを選んでね":S.pending?"▶ 選んでね":"▶ あなたの番"}</div>`:""}
+    <div class="hand ${myMoment?"myturn":""}" id="hand" style="height:${HG.height}px">${myHand.map((c,i)=>cardEl(c,(sel.has(c)?"sel ":"")+(C.dim&&!C.dim.has(c)?"dim ":"")+(gotSet.has(c)?"got ":"")+(newRound?"deal":""),`--cw:${HG.cw}px;z-index:${HG.pos[i].z};transform:${handTf(HG.pos[i],sel.has(c)?24:0)};${newRound?`animation-delay:${i*40}ms`:""}`)).join("")}</div>`
     :`<div class="mebar" style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次のラウンドから参加）":""}</div></div>`}
   </div>
   ${menuOpen?menuHtml():""}`;
@@ -4477,6 +4603,7 @@ function renderGame(){
       grp=[c,...grp.filter(x=>x!==c)];
       if(S.field && !S.pending && S.field.type==="group" && grp.length>S.field.cards.length) grp=grp.slice(0,S.field.cards.length);   // 場の枚数に合わせる
       if(P && P.type==="seven" && P.pid===myId) grp=grp.slice(0,P.n);
+      { const xp=xchgPending(S,myId); if(xp) grp=grp.slice(0,xp.k); }
       if(grp.every(x=>sel.has(x))) grp.forEach(x=>sel.delete(x)); else { grp.forEach(x=>sel.add(x)); if(grp.length>1) vib(12); }
       sfx("tap"); syncSel(); return;
     }
@@ -4495,6 +4622,7 @@ function renderGame(){
     ev.currentTarget.disabled=true; const pz=document.getElementById("pass"); if(pz) pz.disabled=true;
     const K=controls();
     if(K.kind==="give"){ const cards=[...sel]; sel.clear(); act({t:"give",cards}); }
+    else if(K.kind==="xgive"){ const cards=[...sel]; sel.clear(); act({t:"xgive",cards}); }
     else if(K.kind==="bomb"){ const ranks=[...bombSel]; bombSel.clear(); act({t:"bomb",ranks}); }
     else { const cards=[...sel]; sel.clear(); act({t:"play",cards}); }
   };

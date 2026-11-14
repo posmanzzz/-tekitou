@@ -6,7 +6,7 @@
  */
 (function () {
   "use strict";
-  var VERSION = "043437dea5fd";
+  var VERSION = "ef8786f13c98";
   var canInstall = false, updateReady = false, deferred = null, waiting = null, applying = false, reg = null;
 
   function emit() {

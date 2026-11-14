@@ -920,3 +920,31 @@ body.land .seat,body.wide .seat{scale:1}
 .plate,.sstat,.kn{text-overflow:ellipsis}
 .panel{overflow-wrap:anywhere}
 @media (min-resolution:2dppx) and (max-width:420px){ .hint{font-size:12.5px} }
+/* ---- カード交換（2戦目〜）。色は金=自分で選ぶ・緑=もらったカード。動きは付けない（常時アニメなし） ---- */
+.xbox{display:flex;flex-direction:column;align-items:center;gap:4px;max-width:100%;text-align:center}
+.xhead{font-weight:900;font-size:13px;letter-spacing:.1em;color:#ffe08a;text-shadow:0 1px 2px #000}
+.xline{font-size:13px;font-weight:700;line-height:1.35;color:#fff;text-shadow:0 1px 2px #000;overflow-wrap:anywhere}
+.xline b{color:#ffe08a}
+.xline.wait{font-weight:600;font-size:12px;opacity:.9}
+.xline.ok{color:#9dffb0}.xline.ok b{color:#d8ffe2}
+.xcards{display:flex;gap:4px;justify-content:center}
+.xbox .card{--cw:var(--xcw,40px)}
+.xst{display:block;font-size:12px;font-weight:800;padding:1px 10px;border-radius:99px;background:rgba(0,0,0,.45);margin:2px 0}
+.xst.ok{background:rgba(40,140,70,.6)}
+.hand .card.got{box-shadow:0 0 0 3px #5dffb0,0 0 12px 3px rgba(93,255,176,.75),0 2px 5px rgba(0,0,0,.45)}
+.hand .card.got.sel{box-shadow:0 0 0 3px #ffd23a,0 0 18px 4px rgba(93,255,176,.8),0 6px 14px rgba(0,0,0,.5)}
+.hand .card.got::after{content:"もらった";position:absolute;left:-2px;top:-17px;padding:1px 5px;border-radius:7px 7px 0 0;background:#5dffb0;color:#033b1c;font:900 10px/1.3 system-ui,sans-serif;white-space:nowrap;pointer-events:none}
+body.wide .xbox .card{--cw:var(--xcw,56px)}
+body.wide .xline{font-size:15px}
+body.land .xbox{gap:2px}
+body.land .xbox .card{--cw:var(--xcw,30px)}
+body.land .xhead{font-size:11px}
+body.land .xline{font-size:11px;line-height:1.25}
+body.land .xline.wait{font-size:10px}
+body.land .xst{font-size:10px;margin:1px 0}
+body.land .hand .card.got::after{font-size:9px;top:-14px;padding:0 4px}
+.field.xf{min-height:0;padding:8px 12px}
+body.wide .field.xf{min-height:0;padding:10px 16px}
+body.wide .xhead{font-size:15px}
+body.wide .xline.wait{font-size:13px}
+body.land .field.xf{margin-top:12px}
