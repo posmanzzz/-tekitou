@@ -1,0 +1,209 @@
+/* =====================================================================
+   09-ux: 設定・遊び方・アクセシビリティ・画面の形ごとの調整（最後に読む＝前の層を上書きする）
+   ・アイドル中に動く演出は足さない（transform / opacity だけ。perfguard が見張ってる）
+   ===================================================================== */
+:root{--sat:env(safe-area-inset-top,0px);--sar:env(safe-area-inset-right,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);--gold:#ffd23a;--rc:196px}
+#saprobe{position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:var(--sat) var(--sar) var(--sab) var(--sal)}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html{overflow-x:hidden}
+button,.card,.ucard,.tback,.kslot{touch-action:manipulation}
+
+/* ---- フォーカス（キーボード）とホバー（マウス） ---- */
+:focus-visible{outline:3px solid var(--gold);outline-offset:2px;border-radius:8px}
+input:focus-visible{outline:3px solid var(--gold);outline-offset:1px;border-color:var(--gold)}
+button:focus-visible{outline:3px solid #fff;outline-offset:2px;box-shadow:0 0 0 6px rgba(255,210,58,.9),0 3px 0 #a86f0c}
+@media (hover:hover) and (pointer:fine){
+  button:not(:disabled):hover{filter:brightness(1.12)}
+  button.ghost:not(:disabled):hover,.seg button:not(.on):not(:disabled):hover{background:rgba(245,197,66,.22);filter:none}
+  .rule:not(:disabled):hover,.gtile:not(:disabled):hover{border-color:var(--gold);filter:brightness(1.15)}
+  .hand .card,.hand .ucard{transition:transform .16s ease,translate .12s ease}
+  .hand .card:hover,.hand .ucard:hover{translate:0 -10px;box-shadow:0 0 0 2px rgba(255,210,58,.9),0 8px 16px rgba(0,0,0,.5)}
+  .hand .card.dim:hover,.hand .ucard.dim:hover{translate:0 -4px;box-shadow:0 2px 5px rgba(0,0,0,.45)}
+  .seat .ava:hover{box-shadow:0 0 0 3px var(--gold)}
+  .kslot .tback.can:hover{filter:brightness(1.25);transform:scale(1.05)}
+  .udeck.can:hover{filter:brightness(1.12)}
+  .pl:hover{border-color:rgba(255,210,58,.6)}
+}
+/* キーボードのカーソル（キーを使ったあとだけ出る）。重なった手札でも見えるよう前に出す */
+.hand .kf{z-index:300 !important;outline:3px solid #7cf0ff;outline-offset:2px;translate:0 -12px;box-shadow:0 0 0 2px #fff,0 0 18px 4px rgba(124,240,255,.9)}
+.hand .kf::before{content:"▼";position:absolute;left:50%;top:-24px;transform:translateX(-50%);font-size:18px;line-height:1;color:#7cf0ff;text-shadow:0 0 6px #000,0 0 3px #000;pointer-events:none}
+.kslot.kf .tback,.kslot.kf .card{outline:3px solid #7cf0ff;outline-offset:2px;box-shadow:0 0 0 2px #fff,0 0 16px 4px rgba(124,240,255,.9)}
+.kslot.kf .tback{transform:scale(1.06)}
+
+/* ---- ボタンの大きさ（タッチは44px、小ボタンも40px） ---- */
+@media (pointer:coarse){
+  button{min-height:44px}
+  button.small{min-height:40px;padding:8px 12px;font-size:13px}
+  button.round{min-width:44px;min-height:44px}
+  .seg button{min-height:44px}
+  input{min-height:44px}
+}
+button.round{width:44px;height:44px}
+.seg.big button{font-size:16px;padding:12px 4px;min-height:48px}
+
+/* ---- シート（設定・遊び方・確認） ---- */
+#ov .ovsheet{z-index:70;padding:var(--sat) var(--sar) 0 var(--sal)}
+.ovsheet .inner{padding-bottom:calc(24px + var(--sab));max-height:min(88vh,88dvh);overscroll-behavior:contain}
+.ovsheet .inner label{display:block;margin:14px 0 4px;font-size:13px;color:#ffe9a8;font-weight:700}
+.ovsheet .inner label.relayrow{display:flex;align-items:center;gap:8px;color:var(--ink);margin:8px 0 2px;min-height:44px;cursor:pointer}
+.ovsheet .inner label.relayrow input{width:22px;height:22px;min-height:0;flex:none;accent-color:#f5b52e}
+.ovsheet .seg button{font-size:14px;padding:10px 4px}
+.ovsheet .seg button.on{outline:0;box-shadow:0 0 0 2px #fff3a0,0 3px 0 #a86f0c}
+.ovsheet h4{margin:16px 0 6px;font-family:var(--mincho);font-size:15px;color:var(--gold);border-bottom:1px solid rgba(255,210,58,.35);padding-bottom:3px}
+.ovsheet .hl{margin:0;padding-left:1.2em;font-size:13px;line-height:1.7}
+.ovsheet .rl,.ovsheet .kl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:13px;line-height:1.5}
+.ovsheet .rl dt{font-weight:800;color:#ffe9a8}.ovsheet dd{margin:0;color:var(--muted)}
+.ovsheet .kl dt{text-align:right}
+kbd{display:inline-block;min-width:1.8em;text-align:center;padding:1px 7px;border-radius:6px;border:1px solid #c99a2e;background:rgba(0,0,0,.45);color:#ffe9a8;font:700 12px/1.5 system-ui,sans-serif;box-shadow:0 2px 0 #7a5200}
+.ovsheet .verline{margin-top:10px;opacity:.8}
+.ovsheet .ioshow{margin:6px 0;padding:8px;border:1px dashed var(--gold);border-radius:10px;color:#fff}
+.ovsheet.cfm{align-items:center}
+.ovsheet.cfm .inner{max-width:420px;border-radius:18px;border:3px solid #c99a2e}
+.sheet{padding-left:var(--sal);padding-right:var(--sar)}
+.sheet .inner{padding-bottom:calc(24px + var(--sab))}
+
+/* ---- 余白（ノッチ・ホームバー）---- */
+.page{padding-left:max(12px,calc(var(--sal) + 8px));padding-right:max(12px,calc(var(--sar) + 8px));padding-top:calc(14px + var(--sat));padding-bottom:calc(28px + var(--sab))}
+.tbar{top:calc(10px + var(--sat));left:max(10px,calc(var(--sal) + 4px));right:max(10px,calc(var(--sar) + 4px))}
+.mebar{left:max(10px,calc(var(--sal) + 4px));right:max(10px,calc(var(--sar) + 4px))}
+.hand{left:var(--sal);right:var(--sar);bottom:var(--sab)}
+.table.shinkei .mebar.kbar{bottom:calc(12px + var(--sab))}
+.toast{bottom:calc(26px + var(--sab))}
+#afkbar{left:max(8px,var(--sal));right:max(8px,var(--sar));bottom:calc(8px + var(--sab))}
+.netbar{top:calc(8px + var(--sat))}
+.kstrip{left:max(10px,var(--sal));right:max(10px,var(--sar))}
+body.wide .tbar{left:max(24px,calc(var(--sal) + 8px));right:max(24px,calc(var(--sar) + 8px));top:calc(18px + var(--sat))}
+
+/* ---- 上の帯・ヒント ---- */
+.ticker{height:66px;min-height:44px}
+.hintrow{display:flex;align-items:center;justify-content:center;gap:6px;min-height:18px}
+.hintrow .hint{flex:1;min-width:0}
+.hintrow button{flex:none;white-space:nowrap}
+.mebtns .hint{overflow-wrap:anywhere}
+.mebar{flex-wrap:wrap;row-gap:4px}
+.firsthint{position:static;flex:1 0 100%;box-sizing:border-box;z-index:6;text-align:center;font-size:12px;font-weight:800;line-height:1.3;color:#3a2600;background:linear-gradient(#ffe9a8,#ffd23a);border-radius:12px;padding:2px 8px;box-shadow:0 2px 0 #a86f0c,0 0 12px rgba(255,210,58,.6);pointer-events:none}
+body.wide .firsthint{font-size:15px}
+.mebar:has(.tmr.mine) .firsthint{max-width:calc(100% - 54px)}
+body.land .mebar:has(.tmr.mine) .firsthint{max-width:none;margin-right:46px}   /* 自分の残り秒バッジ(.tmr.mine)は操作バーの右上角。ヒントの下に潜らせない */
+
+/* ---- ロビー: ホスト・準備OK ---- */
+.pl.host{border-color:var(--gold);background:rgba(245,197,66,.14)}
+.pl .hostb{display:inline-block;padding:1px 8px;border-radius:99px;background:var(--gold);color:#3a2600;font-weight:900}
+.pl .ok{display:inline-block;padding:1px 8px;border-radius:99px;background:#1c7a4a;color:#fff;font-weight:900}
+.pl .wait{display:inline-block;padding:1px 8px;border-radius:99px;background:rgba(255,255,255,.12);color:var(--muted)}
+.tmpanel .seg{margin-top:2px}
+.tmpanel .seg button:disabled{opacity:.55}
+.tmpanel .seg button.on:disabled{opacity:1}
+#netbar{display:flex;align-items:center;gap:8px}
+#netbar[hidden]{display:none}
+#updbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + var(--sab));z-index:60;display:flex;gap:8px;align-items:center;padding:6px 8px 6px 14px;border-radius:99px;background:rgba(7,5,14,.94);border:1px solid #f5c542;color:#f5c542;font:700 13px/1.3 var(--mincho);box-shadow:0 4px 18px rgba(0,0,0,.6),0 0 14px rgba(245,197,66,.28);max-width:94vw}
+
+/* ---- UNO: 色を記号でも見分けられる（左下の小さな文字。数字・記号とは別に色名の1文字） ---- */
+.ucard.c-R:not(.back)::after,.ucard.c-Y:not(.back)::after,.ucard.c-G:not(.back)::after,.ucard.c-B:not(.back)::after{position:absolute;left:7%;bottom:5%;font-style:normal;font-weight:900;font-size:calc(var(--cw)*.2);line-height:1;color:#fff;-webkit-text-stroke:calc(var(--cw)*.01) #000;text-shadow:0 1px 1px #000;pointer-events:none}
+.ucard.c-R::after{content:"赤"}.ucard.c-Y::after{content:"黄"}.ucard.c-G::after{content:"緑"}.ucard.c-B::after{content:"青"}
+.ucard.wild::after{content:none}
+
+/* ---- ターンタイマー: 席ごとの枠が減っていく / 自分は最後の5秒を強く出す ---- */
+.tring{position:absolute;inset:-7px;border-radius:13px;padding:4px;pointer-events:none;z-index:3;background:conic-gradient(var(--tc,#ffd23a) calc(var(--p,1)*360deg),rgba(0,0,0,.45) 0);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box exclude,linear-gradient(#000 0 0)}
+.tring.low{--tc:#ff3b2e}
+.tring.mine{inset:-5px;border-radius:11px;padding:3px}
+.miniava{position:relative}
+.tmr{font-size:12px;padding:3px 7px;top:-10px;right:-10px}
+.tmr.mine{top:-12px;right:-4px;font-size:13px}
+.tmr.low{animation:tmBadge .5s ease-in-out infinite alternate}
+@keyframes tmBadge{to{transform:scale(1.18)}}
+#tmwarn{top:max(34%,calc(var(--sat) + 90px))}
+body.tmlow::after{content:"";position:fixed;inset:0;z-index:80;pointer-events:none;box-shadow:inset 0 0 0 5px rgba(255,59,46,.9),inset 0 0 60px 10px rgba(255,59,46,.55);animation:tmEdge .5s ease-in-out infinite alternate;will-change:opacity}
+@keyframes tmEdge{from{opacity:.25}to{opacity:1}}
+#afkbar{border:2px solid var(--gold);box-shadow:0 0 18px rgba(255,210,58,.5);font-weight:800}
+#afkbar button{min-height:44px;padding:8px 22px;font-size:17px}
+
+/* ---- 横画面スマホ（body.land）: 上に席の列・真ん中に場・下に手札・右の列に操作 ---- */
+body.land #app{max-width:none}
+body.land .table{max-width:none;width:100vw}
+body.land .tbar{top:calc(6px + var(--sat));gap:6px}
+body.land .ticker{height:40px;min-height:0;padding:3px 8px;font-size:11px;line-height:1.35}
+body.land .ticker div:nth-child(n+3){display:none}
+body.land .ticker .rd{font-size:10px}
+body.land .ticker div:last-child{font-size:12px}
+body.land button.round{width:38px;height:38px;min-width:38px;min-height:38px;font-size:16px}
+body.land .seat{width:70px;transform:translate(-50%,0)}
+body.land .seat.sm,body.land .seat.xs{transform:translate(-50%,0)}
+body.land .seat .fan{display:none}
+body.land .avawrap{width:40px;height:40px;margin-top:0}
+body.land .seat .ava{width:40px;height:40px;font-size:18px;border-width:2px;outline-width:1px}
+body.land .seat .plate{font-size:10px;min-width:0;max-width:72px;padding:1px 5px;border-width:1px}
+body.land .seat .sstat{font-size:10px;padding:0 6px;margin-top:2px}
+body.land .seat .title{font-size:8px;top:-6px;right:-10px}
+body.land .seat button.small{display:none}
+body.land .seat .tmr{top:-4px;right:-6px}
+body.land .field{left:calc(var(--sal) + 10px);right:calc(var(--rc) + var(--sar) + 14px);gap:3px;min-height:0;padding:0}
+body.land .fieldcards{--cw:44px;gap:3px}
+body.land .fieldcards .card{--cw:44px}
+body.land .fieldby{font-size:11px}
+body.land .tags .tag{font-size:10px;padding:1px 6px}
+body.land .ucard.big{--cw:46px}
+body.land .urow{gap:22px}
+body.land .ucolor{font-size:11px}
+body.land .udeck .dn{font-size:10px}
+body.land .wm{font-size:90px}
+body.land .bfield{left:calc(var(--sal) + 10px);right:calc(var(--rc) + var(--sar) + 14px)}
+body.land .bhead{font-size:11px}
+body.land .bpile{font-size:10px}
+body.land .mebar{left:auto;right:max(8px,calc(var(--sar) + 4px));bottom:calc(8px + var(--sab));width:var(--rc);flex-direction:column;align-items:stretch;gap:4px}
+body.land .meinfo{flex-direction:row;align-items:center;gap:6px}
+body.land .meinfo .plate{font-size:11px;max-width:96px}
+body.land .meinfo .sstat{margin-top:0}
+body.land .mebtns{gap:4px}
+body.land .mebtns button{padding:6px 8px;font-size:14px;min-height:40px}
+body.land .hint{font-size:11px;min-height:0}
+body.land .mebar{flex-wrap:nowrap}
+body.land .firsthint{flex:none;font-size:10px;padding:2px 8px}
+body.land .hand{left:var(--sal);right:calc(var(--rc) + var(--sar) + 8px)}
+body.land .ribbon{left:auto;right:max(8px,calc(var(--sar) + 4px));transform:none;width:var(--rc);text-align:center;font-size:13px;padding:2px 0}
+body.land .sevenpick,body.land .bombpick{max-height:76px;overflow:auto}
+body.land .mebar .bubble{left:0;top:-28px}
+body.land .kstrip{top:calc(52px + var(--sat));gap:4px;padding:2px 0 4px}
+body.land .kchip{min-width:48px;padding:2px 5px;flex-direction:row;gap:5px}
+body.land .kchip .ava{width:26px;height:26px;font-size:13px}
+body.land .kchip .kn{max-width:64px}
+body.land .kchip .ks{font-size:9px}body.land .kchip .ks b{font-size:12px}
+body.land .kboard{left:calc(var(--sal) + (100vw - var(--sal) - var(--sar) - var(--rc))/2)}
+body.land .table.shinkei .mebar.kbar{bottom:calc(8px + var(--sab))}
+body.land .page{max-width:none}
+body.land .sheet .inner{max-height:94vh}
+body.land .ovsheet .inner{max-width:640px}
+body.land #tmwarn b{font-size:min(30vh,120px)}
+body.land .led{inset:3px}
+
+/* ---- とても低い横画面 ---- */
+@media (max-height:380px){
+  body.land .ticker .rd{display:none}
+  body.land .ticker{height:34px}
+  body.land .seat .avawrap,body.land .seat .ava{width:34px;height:34px;font-size:15px}
+}
+
+/* ---- 縦に短い画面: 上の帯は2行、席は少し小さく ---- */
+.fieldcards .card{--cw:var(--fcw,56px)}
+.seat{transform-origin:50% 0}
+@media (max-height:700px) and (orientation:portrait){
+  .ticker{height:48px}
+  .ticker div:nth-last-child(2):not(.rd){display:none}
+  .seat{scale:.9}
+  .mebtns button{padding:8px;min-height:44px}
+}
+@media (max-height:600px) and (orientation:portrait){
+  .seat{scale:.8}
+  .mebar .meinfo .plate{font-size:11px}
+}
+body.land .seat,body.wide .seat{scale:1}
+/* ---- 小さい縦画面 ---- */
+@media (max-width:359px){
+  .rules{grid-template-columns:1fr}
+  .tbar{gap:5px}
+  button.round{width:40px;height:40px}
+}
+/* ---- 大きい文字設定でも崩れにくく ---- */
+.plate,.sstat,.kn{text-overflow:ellipsis}
+.panel{overflow-wrap:anywhere}
+@media (min-resolution:2dppx) and (max-width:420px){ .hint{font-size:12.5px} }

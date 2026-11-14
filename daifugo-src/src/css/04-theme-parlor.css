@@ -1,0 +1,100 @@
+/* =====================================================================
+   THEME: ドパガキ・パーラー（UIと演出の統一）
+   ===================================================================== */
+:root{--ink:#fff6dc;--muted:#c9b98a;--accent:#ffd23a;--gold1:#fff6c0;--gold2:#ffd23a;--gold3:#b07800;--g1:rgba(150,40,220,.42);--g2:rgba(255,40,90,.28);--line:rgba(255,210,58,.28);
+  --mincho:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif}
+body.revmode{--g1:rgba(255,30,120,.6);--g2:rgba(255,120,40,.35);--accent:#ffd23a}
+body.ebmode{--g1:rgba(60,100,255,.6);--g2:rgba(0,220,255,.3);--accent:#ffd23a}
+body.revmode.ebmode{--g1:rgba(170,60,255,.6);--g2:rgba(255,60,200,.35)}
+body.lockmode{--g2:rgba(40,230,120,.35)}
+html,body{background:#07050e}
+body{background:radial-gradient(ellipse 90% 60% at 50% 38%,var(--g1),transparent 70%),radial-gradient(ellipse 80% 50% at 50% 115%,var(--g2),transparent 70%),#07050e;background-attachment:fixed}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;background-image:radial-gradient(rgba(255,215,90,.16) 1px,transparent 1.6px);background-size:22px 22px;-webkit-mask:radial-gradient(ellipse at 50% 45%,transparent 25%,#000 85%);mask:radial-gradient(ellipse at 50% 45%,transparent 25%,#000 85%)}
+#app{position:relative;z-index:1}
+/* 金文字（見出し・ロゴ・カットイン・バナーで共通） */
+h1,.logo b,.cutin .ttl,.banner,.code{font-family:var(--mincho);font-weight:900}
+h1{font-size:26px;color:transparent;background:linear-gradient(180deg,#fffbe0,#ffe066 35%,#d99a00 55%,#fff2a8 70%,#b07800);-webkit-background-clip:text;background-clip:text;filter:drop-shadow(0 0 1px #000) drop-shadow(2px 3px 0 rgba(0,0,0,.6)) drop-shadow(0 0 10px rgba(255,190,0,.45));text-shadow:none}
+.logo{text-align:center;margin:10px 0 6px;line-height:1}
+.logo small{display:block;font-family:var(--mincho);font-weight:900;font-size:18px;color:#ffe9a8;letter-spacing:.3em;text-shadow:0 0 10px rgba(255,200,60,.7)}
+.logo b{display:block;font-size:min(96px,24vw);color:transparent;background:linear-gradient(180deg,#fffbe0 0%,#ffe066 28%,#e0a000 50%,#fff2a8 62%,#b07800 100%);-webkit-background-clip:text;background-clip:text;filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 1px #000) drop-shadow(4px 6px 0 rgba(0,0,0,.7)) drop-shadow(0 0 24px rgba(255,40,160,.7));animation:logoGlow 2.4s ease-in-out infinite}
+.logo em{display:block;font-style:normal;font-weight:900;letter-spacing:.45em;font-size:12px;margin-top:6px;color:transparent;background:linear-gradient(90deg,#ff004c,#ffb700,#fff200,#44ff00,#00e5ff,#7a00ff,#ff00c8,#ff004c);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;animation:kRain 2s linear infinite}
+@keyframes logoGlow{50%{filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 1px #000) drop-shadow(4px 6px 0 rgba(0,0,0,.7)) drop-shadow(0 0 34px rgba(0,200,255,.8))}}
+.sub,.note{color:var(--muted)}
+.code{color:transparent;background:linear-gradient(180deg,#fffbe0,#ffd23a 55%,#b07800);-webkit-background-clip:text;background-clip:text}
+/* パネル・入力 */
+.panel{background:linear-gradient(180deg,rgba(28,18,44,.88),rgba(10,6,20,.9));border:1px solid rgba(255,210,58,.45);box-shadow:0 0 0 1px rgba(0,0,0,.6),inset 0 0 24px rgba(255,200,60,.08),0 6px 20px rgba(0,0,0,.5);border-radius:16px}
+input{background:#0a0714;border:1px solid rgba(255,210,58,.35);color:#fff6dc}
+input:focus{border-color:#ffd23a;box-shadow:0 0 0 3px rgba(255,210,58,.25),0 0 14px rgba(255,210,58,.4)}
+label{color:#e8cf86;font-weight:700}
+/* ボタン：金メタル／黒ガラス／銀クローム／赤い「出す」 */
+button{color:#3a2200;background:linear-gradient(180deg,#fff7c8 0%,#ffd23a 42%,#c88a00 58%,#ffe680 100%);border:1px solid #6b4700;box-shadow:inset 0 1px 0 rgba(255,255,255,.8),0 3px 0 #6b4700,0 4px 12px rgba(255,190,0,.35);text-shadow:0 1px 0 rgba(255,255,255,.5)}
+button:active{box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 1px 0 #6b4700}
+button.ghost{background:linear-gradient(180deg,rgba(40,28,60,.9),rgba(14,8,24,.9));color:#ffe9a8;border:1px solid rgba(255,210,58,.5);box-shadow:inset 0 0 10px rgba(255,210,58,.1);text-shadow:none}
+button.round{background:radial-gradient(circle at 35% 30%,#3a2c4c,#0b0614);border:2px solid #ffd23a;color:#ffe9a8;box-shadow:0 0 10px rgba(255,210,58,.45),inset 0 0 8px rgba(255,210,58,.25);text-shadow:none}
+.mebtns button.passbtn{background:linear-gradient(180deg,#ffffff,#c9ced6 45%,#8a9099 55%,#e6e9ee);color:#1a1a1a;border:1px solid #444;box-shadow:inset 0 1px 0 #fff,0 3px 0 #444}
+#play{color:#fff;font-family:var(--mincho);font-weight:900;font-size:17px;letter-spacing:.08em;background:linear-gradient(180deg,#ffb0b0 0%,#ff2a3a 40%,#b00018 60%,#ff5a5a 100%);border:2px solid #ffd23a;box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 3px 0 #6b0010,0 0 16px rgba(255,40,60,.6);text-shadow:0 2px 2px rgba(0,0,0,.5)}
+#play:disabled{filter:grayscale(.85) brightness(.6);box-shadow:none}
+.table.myturn #play:not(:disabled){animation:playPulse .9s ease-in-out infinite}
+@keyframes playPulse{50%{box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 3px 0 #6b0010,0 0 34px 8px rgba(255,60,80,.9);transform:scale(1.04)}}
+.seg button:not(.on),.rule{background:linear-gradient(180deg,rgba(40,28,60,.9),rgba(14,8,24,.9));color:#ffe9a8;border:1px solid rgba(255,210,58,.3);box-shadow:none;text-shadow:none}
+.rule.on{background:linear-gradient(180deg,rgba(120,80,0,.55),rgba(50,30,0,.6));border-color:#ffd23a;box-shadow:0 0 12px rgba(255,210,58,.45),inset 0 0 10px rgba(255,210,58,.2)}
+.rule small{color:#c9b98a}
+.pl{background:linear-gradient(180deg,rgba(40,28,60,.85),rgba(14,8,24,.85));border:1px solid rgba(255,210,58,.3)}
+.pl.me{border-color:#ffd23a;box-shadow:0 0 10px rgba(255,210,58,.4)}
+.pl.ready{border-color:#44ff88;box-shadow:0 0 10px rgba(68,255,136,.35)}
+.badge{background:rgba(255,255,255,.12);color:#ffe9a8}
+.badge.gold{background:linear-gradient(180deg,#fff7c8,#ffd23a 50%,#c88a00);color:#3a2200}
+.badge.bad{background:linear-gradient(180deg,#7a2b6a,#3a0a30);color:#ffc2e8}
+.rank li{font-family:var(--mincho);font-weight:900;font-size:18px}
+.rank li:first-child{font-size:22px;color:#ffe066;text-shadow:0 0 12px rgba(255,200,0,.7)}
+/* 卓：金のLED枠（自分の番は虹LED） */
+/* ログ＝LED電光掲示板 */
+.ticker{background:linear-gradient(180deg,#0b0712,#120a1c);border:2px solid #ffd23a;box-shadow:0 0 12px rgba(255,210,58,.35),inset 0 0 14px rgba(255,120,0,.15)}
+.ticker div{color:#ffb347;text-shadow:0 0 6px rgba(255,150,40,.8)}
+.ticker div:last-child{color:#ffe066}
+.ticker .rd{color:#ff5ac8;text-shadow:0 0 6px rgba(255,80,200,.8)}
+/* 場＝液晶 */
+.field{padding:12px 10px;border-radius:18px;min-height:140px;background:radial-gradient(ellipse at 50% 40%,rgba(40,120,255,.28),rgba(8,10,40,.75) 70%);border:2px solid rgba(120,200,255,.45);box-shadow:inset 0 0 30px rgba(60,160,255,.35),0 0 18px rgba(60,160,255,.25)}
+.field::after{content:"";position:absolute;inset:0;border-radius:16px;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px)}
+.fieldby{color:#bfe6ff;text-shadow:0 0 6px rgba(80,180,255,.9)}
+/* 席：黒×金プレート、金縁アイコン、赤金カード裏 */
+.plate{background:linear-gradient(180deg,#2a1e3a,#0c0714);border:2px solid #ffd23a;color:#ffe9a8;box-shadow:0 0 8px rgba(255,210,58,.4),inset 0 1px 0 rgba(255,255,255,.15)}
+.seat.turn .plate{background:linear-gradient(180deg,#ff5a6a,#b0001a);color:#fff;border-color:#fff2a8;animation:turnGlow .8s ease-in-out infinite}
+@keyframes turnGlow{50%{box-shadow:0 0 18px 6px rgba(255,60,80,.9),0 0 30px rgba(255,210,58,.6)}}
+.ava{border:3px solid #ffd23a;outline:2px solid #6b4700;box-shadow:0 0 12px rgba(255,210,58,.45)}
+.seat.turn .ava{outline-color:#ff2a3a;box-shadow:0 0 18px rgba(255,60,80,.9)}
+.bk,.mini,.flyback{border-color:#ffe066 !important;background:repeating-linear-gradient(45deg,#b0001a 0 3px,#e8102a 3px 6px) !important}
+.sstat{background:linear-gradient(180deg,#2a1e3a,#0c0714);border:1px solid rgba(255,210,58,.5);color:#ffe9a8}
+.sstat.win{background:linear-gradient(180deg,#fff7c8,#ffd23a 50%,#c88a00);color:#3a2200;border-color:#6b4700}
+.sstat.pass{background:#2a2a30;color:#aaa}
+.title{background:linear-gradient(180deg,#2a1e3a,#0c0714);border-color:#ffd23a;color:#ffe066;font-family:var(--mincho)}
+.title.gold{background:linear-gradient(180deg,#fff7c8,#ffd23a 50%,#c88a00);color:#3a2200}
+/* 手札・リボン・ヒント */
+.card.sel{box-shadow:0 0 0 3px #ffd23a,0 0 18px 4px rgba(255,60,80,.7),0 6px 14px rgba(0,0,0,.5)}
+.card.joker{border:2px solid transparent;background:linear-gradient(160deg,#fff,#f3e3ff) padding-box,linear-gradient(90deg,#ff004c,#ffb700,#44ff00,#00e5ff,#7a00ff) border-box}
+.card.dim{filter:brightness(.55) saturate(.6)}
+.ribbon{background:none;color:#fff;font-family:var(--mincho);font-size:15px;-webkit-text-stroke:.5px #000;text-shadow:0 1px 2px #000;animation:rib 1s ease-in-out infinite;box-shadow:0 0 16px rgba(255,255,255,.6);overflow:hidden;isolation:isolate}
+/* 虹色の帯は ::before を transform で流す（background-position を動かさない）。幅400%＝虹2周分、-50%動かすと元と同じ1周ぶん流れる */
+.ribbon::before{content:"";position:absolute;left:0;top:0;bottom:0;width:400%;z-index:-1;background:linear-gradient(90deg,#ff004c,#ffb700,#fff200,#44ff00,#00e5ff,#7a00ff,#ff00c8,#ff004c) 0 0/50% 100%;animation:ribSlide 1.5s linear infinite}
+@keyframes ribSlide{to{transform:translateX(-50%)}}
+.hint{color:#ffe9a8;text-shadow:0 0 6px rgba(255,200,60,.7),0 1px 2px #000}
+.hand.myturn::after{background:radial-gradient(rgba(255,60,120,.5),transparent 70%)}
+/* 透かし文字も明朝に */
+.wm{font-family:var(--mincho)}
+/* バナー・カットインの文字を漢字演出と同じ質感に */
+.banner{color:transparent !important;background:linear-gradient(180deg,#fffbe0,#ffe066 30%,#e0a000 52%,#fff2a8 66%,#b07800);-webkit-background-clip:text;background-clip:text;-webkit-text-stroke:0;text-shadow:none;filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 1px #000) drop-shadow(3px 5px 0 rgba(0,0,0,.6)) drop-shadow(0 0 16px rgba(255,180,0,.7))}
+.banner.rev,.banner.foul{background-image:linear-gradient(180deg,#fff,#ffd0e0 25%,#ff2a6a 55%,#8a0030)}
+.banner.eight,.banner.eb{background-image:linear-gradient(180deg,#fff,#c8f0ff 25%,#22a0ff 55%,#06308a)}
+.banner.myturn{background-image:linear-gradient(90deg,#ff004c,#ffb700,#fff200,#44ff00,#00e5ff,#7a00ff,#ff00c8,#ff004c);background-size:200% 100%;animation:ban 1.4s cubic-bezier(.2,1.3,.4,1) both}
+.cutin .ttl{color:transparent;-webkit-text-stroke:0;text-shadow:none;background:linear-gradient(180deg,#ffffff 0%,#fffbe0 30%,#ffe066 55%,#fff6c0 75%,#ffd23a 100%);-webkit-background-clip:text;background-clip:text;filter:drop-shadow(0 0 1px #000) drop-shadow(0 0 2px #000) drop-shadow(4px 5px 0 rgba(0,0,0,.55))}
+.cutin .band{border-top:3px solid #ffd23a;border-bottom:3px solid #ffd23a}
+.cutin .sub{font-family:var(--mincho)}
+/* シート・トースト */
+.sheet .inner,.chat .inner{background:linear-gradient(180deg,#1c1230,#0a0614);border-top:3px solid #ffd23a;box-shadow:0 -6px 24px rgba(255,200,60,.25)}
+.msg{background:rgba(255,255,255,.08);border:1px solid rgba(255,210,58,.2)}
+.msg.mine{background:rgba(255,210,58,.18)}
+.toast{background:linear-gradient(180deg,#2a1e3a,#0c0714);border:1px solid #ffd23a;color:#ffe9a8;box-shadow:0 0 14px rgba(255,210,58,.4)}
+.bombpick button{background:linear-gradient(180deg,#fff,#e6e6e6);border:1px solid #888}
+.bombpick button.on{background:linear-gradient(180deg,#ffb0b0,#ff2a3a 50%,#b00018);color:#fff;border-color:#ffd23a}
+.avpick{border:2px dashed rgba(255,210,58,.6);background:#0a0714}
+

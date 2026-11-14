@@ -1,0 +1,55 @@
+/* ===================== PC全画面（横長） ===================== */
+body.wide #app{max-width:none}
+body.wide .table{max-width:none;width:100vw}
+body.wide .page{max-width:780px;margin:0 auto}
+body.wide .seat{transform:translate(-50%,0) scale(1.4);transform-origin:50% 0}
+body.wide .seat.sm{transform:translate(-50%,0) scale(1.15)}
+body.wide .seat.xs{transform:translate(-50%,0) scale(1)}
+body.wide .field{left:30%;right:30%;min-height:210px;padding:18px}
+body.wide .fieldcards{--cw:86px;gap:8px}
+body.wide .fieldcards .card{--cw:86px}
+body.wide .fieldby{font-size:15px}
+body.wide .ucard.big{--cw:100px}
+body.wide .urow{gap:48px}
+body.wide .mebar{left:50%;right:auto;width:min(860px,92vw);transform:translateX(-50%)}
+body.wide .mebtns button{font-size:17px;padding:12px}
+body.wide .hint{font-size:15px}
+body.wide .tbar{left:24px;right:24px;top:18px}
+body.wide .ticker{max-width:680px;font-size:14px}
+body.wide .ticker div:last-child{font-size:17px}
+body.wide .tags .tag{font-size:15px}
+body.wide .ribbon{font-size:18px;padding:5px 24px}
+body.wide .wm{font-size:220px}
+body.wide .led{inset:8px}
+body.wide .sevenpick button,body.wide .bombpick button{font-size:17px}
+
+/* 上がりアイコン全面 */
+.aslam{position:absolute;inset:0;pointer-events:none;--S:300px}
+.aslam .bg{position:absolute;inset:0;opacity:0}
+.aslam.good .bg{background:radial-gradient(circle at 50% 42%,rgba(255,236,150,.55),rgba(120,60,0,.55) 45%,rgba(10,0,20,.82) 80%)}
+.aslam.king .bg{background:radial-gradient(circle at 50% 42%,rgba(255,250,200,.7),rgba(255,120,40,.5) 35%,rgba(90,0,60,.85) 80%)}
+.aslam.bad .bg{background:radial-gradient(circle at 50% 42%,rgba(70,70,60,.6),rgba(10,10,10,.92) 70%)}
+.aslam .rays{position:absolute;left:50%;top:42%;width:130vmax;height:130vmax;margin:-65vmax 0 0 -65vmax;opacity:0;background:repeating-conic-gradient(rgba(255,222,100,.32) 0 7deg,transparent 7deg 16deg);will-change:transform}
+.aslam.king .rays{background:repeating-conic-gradient(rgba(255,90,90,.3) 0 6deg,rgba(255,230,90,.32) 6deg 12deg,rgba(90,220,255,.28) 12deg 18deg,transparent 18deg 26deg)}
+.aslam.bad .rays{display:none}
+.aslam .big{position:absolute;left:50%;top:42%;width:var(--S);height:var(--S);will-change:transform,opacity}
+.aslam .big>div{position:absolute;inset:0}
+.aslam .big .ava{width:100%;height:100%;font-size:calc(var(--S)*.46);border-width:calc(var(--S)*.03);outline-width:calc(var(--S)*.015);border-radius:calc(var(--S)*.08)}
+.aslam.good .big .ava{box-shadow:0 0 calc(var(--S)*.25) rgba(255,214,90,.9),0 0 0 calc(var(--S)*.04) rgba(255,214,90,.35)}
+.aslam.king .big .ava{border-color:#fff3a0;box-shadow:0 0 calc(var(--S)*.3) #ffd84a,0 0 calc(var(--S)*.1) #ff5ad1,0 0 0 calc(var(--S)*.05) rgba(255,255,255,.3)}
+.aslam .gray{opacity:0;filter:grayscale(1) brightness(.6) contrast(1.2)}
+.aslam.good .gray,.aslam.good .crack{display:none}
+.aslam .crack{position:absolute;inset:-4%;opacity:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cg fill='none' stroke='%23111' stroke-width='1.6' stroke-linejoin='bevel'%3E%3Cpath d='M48 0 L52 22 L40 38 L55 52 L44 70 L50 100'/%3E%3Cpath d='M52 22 L78 14 L100 20'/%3E%3Cpath d='M40 38 L14 34 L0 44'/%3E%3Cpath d='M55 52 L82 60 L100 76'/%3E%3Cpath d='M44 70 L18 82 L4 100'/%3E%3C/g%3E%3Cg fill='none' stroke='%23ddd' stroke-width='.5' opacity='.6'%3E%3Cpath d='M49 0 L53 22 L41 38 L56 52 L45 70 L51 100'/%3E%3C/g%3E%3C/svg%3E") center/100% 100%}
+.aslam .ttl{position:absolute;left:50%;top:calc(42% + var(--S)/2 + 12px);text-align:center;white-space:nowrap;opacity:0}
+.aslam .ttl b{display:block;font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;font-weight:900;font-size:calc(var(--S)*.24);line-height:1.05;letter-spacing:.04em}
+.aslam .ttl small{display:block;font-size:calc(var(--S)*.08);font-weight:800;color:#fff;margin-top:4px;text-shadow:0 2px 4px #000}
+.aslam.good .ttl b,.aslam.king .ttl b{background:linear-gradient(#fff9d0,#ffd23a 45%,#c47a00 55%,#ffe98a);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 3px 0 #5a2a00) drop-shadow(0 0 12px rgba(255,200,60,.8))}
+.aslam.bad .ttl b{color:#9a9a90;text-shadow:0 3px 0 #222,0 0 10px #000}
+.aslam.bad .ttl small{color:#aaa}
+.slcrown{position:absolute;z-index:2;pointer-events:none;filter:drop-shadow(0 4px 8px rgba(0,0,0,.6))}
+.slcan{position:absolute;left:50%;bottom:2%;line-height:1;pointer-events:none;filter:grayscale(.3) drop-shadow(0 6px 10px #000)}
+.slfly{position:absolute;font-size:26px;margin:-13px 0 0 -13px;pointer-events:none}
+.xhand{position:fixed;bottom:auto;right:auto;z-index:2;pointer-events:none}
+.xhand .card.xfuse{box-shadow:0 0 18px 6px rgba(255,90,30,.9),0 0 4px #fff}
+.xhand .card{transition:none}
+

@@ -1,0 +1,38 @@
+{
+  "id": "./",
+  "name": "合言葉大富豪",
+  "short_name": "大富豪",
+  "description": "合言葉で友達と遊べるブラウザ大富豪。UNO・ババ抜き・神経衰弱もあるよ。CPUとひとりでも、オンラインで最大みんなでも。",
+  "lang": "ja",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#07050e",
+  "background_color": "#07050e",
+  "categories": [
+    "games",
+    "entertainment"
+  ],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
