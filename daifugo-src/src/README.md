@@ -21,6 +21,7 @@
 - 07-wide-layout: `body.wide` PC landscape layout.
 - 08-spots-and-late: background spotlights (#spots), then late additions (mini games, lobby/room list .rrow).
 - 09-ux: LAST layer. Safe-area vars (`--sat/--sar/--sab/--sal` = env(safe-area-inset-*); tests override them), focus-visible/hover, settings/help sheets, `body.land` compact landscape layout (seats in one top row, hand bottom-left, controls in a right column of `--rc`=196px), short-portrait compaction, UNO colour letters, timer ring (`.tring`), first-visit hint, keyboard cursor `.kf`.
+- 10-exchange: card-exchange panel (`.xbox`, `.field.xf`) and the green `もらった` mark on hand cards (`.hand .card.got`). Static, no animations (keep it that way: perfguard).
 
 ## js/
 - 01-rules-daifugo: constants (SUITS, RULE_DEFS, DEFAULT_RULES, PRESETS), analyze/canPlay, blankRoom, startRound,
@@ -33,6 +34,7 @@
   `viewFor(s,pid)` (per-player hidden-info filter; also hides UNO `u.drew.card`), and `normState(s)` (allow-list rebuilder for any state
   received from the network: drops unknown fields, caps sizes, returns null if structurally broken). **A new state field must be added to normState or it will be dropped on clients.**
   Actions added for the timer: `timer` (host, non-play phase, 0/15/30/60), `auto` (host only), `back` (leave "away").
+- 04b-engine-coins: coin economy engine (see "Coins / betting / season"): prizes, bet odds/escrow/settlement, `coinPreRound`, `coinSync`, `coinAbort`, `standingsOf`, `cpuBetPick`.
 - 05-util-audio-fxcore: esc/hash/store/sstore/clone, `window.__dfg` test export and the test early-return, audio (tone/noise/sfx),
   banner/flash/shake, PFX single-canvas particle system (confetti/burst/fireworks/rain), `QG` quality governor, overlay helpers, flyCardsToField, myTurnFx.
 - 06-fx-dopa-slam: fxLevel/dopa(), onoma/stamp/praise/kanji/cutin, winFx/placeFx, avaSlam + good/bad slam variants (GOODF/BADF tables).
@@ -46,6 +48,7 @@
 - 09-net-timer: host-enforced turn timer (see "Turn timer" below) and its UI (`.tmr` badge, `#tmwarn`, `#afkbar`).
 - 10-net-directory: lazy directory connection (`dirWanted`/`dirSync`: only on the entry screen for users who have not opted out via `dfg_nodir`; stopped in solo), `dirNorm` validates every listing field. Room list ("案内所" peer id DIR_ID, `Dir`), dirTick/dirRegister, entry-page list; joinOnline/startSolo/backToEntry/leave; `driveBots` (host-only CPU stepping).
 - 11-ui-common: `render()` dispatch by screen/game, stateSig diff, runFx, chat (collectChat/sendChat/updateChat), cardEl, avatar(), fx/sound buttons.
+- 11b-ui-coins: bet panel, standings, season selector, awards ceremony, coin fx, CPU bet driver (`driveCpuBets`).
 - 12-ui-entry-lobby: renderEntry, lobby panels (playerChips, rulesPanel, gamePanel, securityPanel), start controls, renderLobby.
 - 13-ui-uno: unoCardEl, unoSeatHtml, unoControls, renderUno, playUnoFx.
 - 14-ui-mini: shared genSeatHtml/tableTop, renderBaba/playBabaFx, kGrid/renderShinkei/playShinkeiFx.
@@ -53,6 +56,19 @@
 - 15b-ui-settings-help: settings sheet (⚙), help sheet (❓ per game), confirm dialog (all rendered into `#ov`, outside `#app`, so table re-renders never touch them), the `LAYERS`/history manager (`layerSync()` pushes one history entry per open layer + one for the room; popstate closes the top layer, from the room asks `askLeave()`), Wake Lock, `beforeunload` (online play only), PWA glue (`__pwa` read only; sets `ui=false`, shows `#updbar`, never during play), first-visit hint (`firstHint/noteMove`), `topCardAt()` (visually topmost card), keyboard handler + `kb` cursor, `uxSync()` (called at the end of every `render()`). `SAFE` (px insets, read by `readSafe()` via the `#saprobe` element) is used by 16/13/14 for geometry.
 - 16-ui-daifugo-pages: table geometry (SEAT_POS, isWide, seatPos, handGeom, layoutHand), controls, renderGame, menuHtml, renderResult,
   then the final `render();` call and the IIFE closer `})();`.
+
+## Card exchange (大富豪 `exchange` rule, 2nd round on)
+- Counts (unchanged): 2 players 1 card; 3 players 2 cards (大富豪/大貧民); 4+ players 大貧民->大富豪 2 cards and 貧民->富豪 1 card. Titles come from `prevFinish`.
+- `startRound` (01) deals, then takes the poor side's strongest cards (`byStrength`: JOKER > 2 > A..., ties by suit order S,H,D,C then string) and hands them to the rich side at once.
+  State: `s.xchg = {on, pairs:[{rich, poor, k, ok, took:[...], gave:[...]|null}]}`; `on` stays true until every rich player has given (the pairs stay for the rest of the round, UI marks received cards from them; the next `startRound` resets it).
+  While `on`, `canPlay`/`doPass`/`botStep`/`candidates` refuse everything; `s.turn` is already the first player (previous 大貧民) but the UI shows no turn.
+- Action `{t:"xgive", cards:[...]}` by the rich player (exactly `k` distinct cards from his hand, received ones included). 大富豪 and 富豪 choose independently, order does not matter.
+- CPU / away rich players: `xchgAdvance` gives their weakest `k` cards immediately. It runs at the end of `startRound` and after EVERY successful `applyAction` while `on` (so leave/disc/drop/kick/tobot/afk of a pending player never blocks the round).
+- Timer (09-net-timer): while `on` the host keeps ONE shared deadline (`HT.actor = "*x"`, not reset by a give); on expiry it sends `{t:"auto", id}` for every pending human (`auto` gives the weakest cards, counts as a timeout, 2 in a row = away). The wire `tp` is the first pending id; the client shows its own badge when it is pending.
+- Privacy: `viewFor` strips `took`/`gave` from pairs the viewer is not part of; fx `xtake` (poor->rich, at deal) and `xgive` (rich->poor) carry the card ids only in `priv:{ids:[rich,poor],cards}`; the log never names cards. `normState` keeps `xchg` (a new field must be listed there). `replaceId` renames ids inside pairs, `lobbyBackup` clears `xchg`.
+- UI (16): `xchgBox()` panel in the field area (also shown to the two players until the first card of the round is played), `controls()` kind `xgive` (button enabled only with exactly `k` selected), received cards get class `got`. fx (07): `xtake` = 献上, `xgive` = 下賜 (cutin/kanji only for the two involved, others get a float text).
+- driveBots does not run during `on` (nothing for a CPU to do). PROTO was bumped to 3 for this.
+- Tests: `xchgtest.js` (engine), `advfuzz.js` (hostile actions during the step; `runGame(...,xch)`), `xchgui.js` (solo, screenshots in `t/xchg/`), `xchgp2p.js` (2 browsers: privacy, timeout, host hand-off).
 
 ## Turn timer (09-net-timer)
 - Setting lives in the state (`tsec`: 0/15/30/60; default 30 online, solo sets 0). Only the host counts. Every state message carries `tr` (ms left) and `tp` (whose turn);
@@ -68,8 +84,29 @@
 
 ## Tests added with the hardening work (all in run_all.sh)
 `advfuzz` (engine adversarial fuzz), `advnet` (hostile client and hostile host), `xss` (sink escaping with payloads in every field), `timertest` (engine timer),
-`p2ptimer` (timer in real browsers, clock skew, hand-off), `protocol` (PROTO handshake, relay toggle, lazy directory, `__dfgSet` absent in a plain build).
+`p2ptimer` (timer in real browsers, clock skew, hand-off), `xchgtest`/`xchgui`/`xchgp2p` (card exchange), `protocol` (PROTO handshake, relay toggle, lazy directory, `__dfgSet` absent in a plain build).
 Security overview for users/hosts: `/home/claude/SECURITY.md`.
+
+## Coins / betting / season
+- One currency (コイン), everybody starts a season at 1000. Fields (all in `normState`'s allow-list, `replaceId` moves them with a seat):
+  `coins{id:n}`, `sea{len,n,fin,no,cer}` (season length 0/3/5/10, rounds played, season finished, season number, ceremony shown),
+  `bet{k,f,cand,bets[{id,on,stake,m}]}` (the open market: k = market no., f = finished-count it waits for, cand = candidates with odds),
+  `bk` (market counter), `bv` (bet version), `bl`/`rb`/`rl` (last bet results / round breakdown). `bv` is bumped by bets so a bet never
+  resets the turn timer (`gv`) and never cancels a CPU move (`botVer = v - bv`, 10-net-directory).
+- Placement prizes (all four games): `round(500*(N-r)/(N-1))`, paid when the round ends (`roundPrize`).
+- Betting 「次に上がるのは誰？」: 大富豪 and ババ抜き only, by players who are out of play (already finished) or spectating (`wait`).
+  Stakes 50/100/200 are taken at once (escrow). Odds from `1/cardsInHand` weights: `mult = clamp(0.9/p, 1.1, 12)` rounded to 0.1,
+  a win pays `floor(stake*mult)`. A market closes when `s.finished` grows (the next player is out). New market opens for the next place.
+  Refund when the market can never resolve (foul / 都落ち, round aborted, host fair-mode lobby backup -> `coinAbort`). CPUs bet small random amounts
+  (`cpuBetPick`, run by the host in `driveCpuBets`). A bet is final. Betting never pauses the game.
+- Season: lobby selector 「表彰まで: なし/3/5/10回戦」 (default 5). After the last round the result page starts the awards ceremony
+  (last place up to 3rd, then 2nd, then the champion: `avaSlam` king + 優勝/総合優勝, coin fountain, fireworks; last place gets the lose variant).
+  Tap to skip, Esc closes, `#cerreplay` replays it; the ceremony never waits for a player who left. Then 「新シーズンを始める」 resets coins to 1000.
+- Standings are shown in the lobby, in the menu and on the result page. UNO / 神経衰弱 have prizes and standings but no betting; spectators
+  there just see the coin pills.
+- Effects obey fxLevel (0 = no big effects, only numbers). Ceremony overlay is z-index 14 (below `#fx` 15). Animations are transform/opacity only.
+- Tests: `t/cointest.js` (engine), hostile bets in `t/advfuzz.js`, `t/coinui.js` (UI + ceremony + screenshots in `t/coin/`, 4 viewports),
+  `t/coinp2p.js` (two+ real browsers, host hand-off in a market), bettor geometry (`BETGEO` in `t/uxlib.js`) in `t/uxshots.js`.
 
 ## Order-sensitive notes
 - 05 contains `window.__dfg={...}; if(window.__DFG_TEST__) return;`. In jsdom tests the IIFE returns there, so

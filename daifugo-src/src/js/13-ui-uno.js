@@ -24,7 +24,7 @@ function unoSeatHtml(p,x,y,small){
   return `<div data-seat="${esc(p.id)}" class="seat ${small?(S.order.length>=9?"xs":"sm"):""} ${talk?"talk":""} ${S.turn===p.id?"turn":""} ${cnt===1?"unoone":""}" style="left:${x}%;top:${y}%">
     ${bubbleHtml(p.id)}
     <div class="plate">${p.away?"💤":""}${esc(p.name)}</div>
-    <div class="avawrap"><div class="fan">${backs}</div>${avatar(p)}</div>
+    <div class="avawrap"><div class="fan">${backs}</div>${avatar(p)}${scoinHtml(p.id)}</div>
     ${stat}${tobot}</div>`;
 }
 // 自分の操作の状態
@@ -90,7 +90,7 @@ function renderUno(){
       ${bubbleHtml(myId)}${firstHint("uno")}
       <div class="meinfo">
         <div class="row" style="gap:5px;flex-wrap:nowrap">${miniAva(meP,34)}<div class="plate" style="${myMoment?"background:linear-gradient(#ffe08a,#f5b52e);color:#3a2600":""}">${esc(meP.name)}</div></div>
-        <span class="sstat ${hand.length===1?"unoleft":""}">${hand.length}枚${(U.called||{})[myId]?" · UNO宣言済":""}</span>
+        <span class="sstat ${hand.length===1?"unoleft":""}">${hand.length}枚${(U.called||{})[myId]?" · UNO宣言済":""}</span>${mecoinHtml()}
       </div>
       <div class="mebtns">
         ${sevenPick}
@@ -104,7 +104,7 @@ function renderUno(){
     </div>
     ${myMoment?`<div class="ribbon" id="ribbon">${U.pending?"▶ 選んでね":"▶ あなたの番"}</div>`:""}
     <div class="hand ${myMoment?"myturn":""}" id="hand" style="height:${HG.height}px">${hand.map((c,i)=>unoCardEl(c,(unoSel===c?"sel ":"")+(C.dim&&!C.dim.has(c)?"dim ":"")+(newRound?"deal":""),`--cw:${HG.cw}px;z-index:${HG.pos[i].z};transform:${handTf(HG.pos[i],unoSel===c?24:0)};${newRound?`animation-delay:${i*40}ms`:""}`)).join("")}</div>`
-    :`<div class="mebar" style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次の回戦から参加）":""}</div></div>`}
+    :`<div class="mebar" style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次の回戦から参加）":""} ${S.coins?`<span class="cn">🪙 ${esc(cfmt(coinOf(myId)))}</span>`:""}</div></div>`}
   </div>
   ${wildPick?`<div class="wildpick" id="wildpick"><div class="inner"><b>色を選んでね</b><div class="wg">${UNO_COLORS.map(c=>`<button class="c-${c}" data-wc="${c}">${UNO_COLOR_NAME[c]}</button>`).join("")}</div><button class="ghost small" id="wcancel">やめる</button></div></div>`:""}
   ${menuOpen?menuHtml():""}`;

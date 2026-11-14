@@ -27,6 +27,30 @@ function seatPos(k){
   for(let i=0;i<k;i++){ const t=i/(k-1), ang=Math.PI*(1-t); out.push([50+39*Math.cos(ang), Math.max(minY,40-28*Math.sin(ang))]); }
   return out;
 }
+// ---- カード交換（2戦目〜）の表示用 ----
+const xcText = c => { const q=parse(c); return q.r===16 ? "JOKER" : SUIT_SYM[q.s]+RANK_LABEL(q.r); };
+const xcList = cs => cs.map(xcText).join(" と ");
+const xTitle = id => (S.titles&&S.titles[id]) || nameOf(S,id);
+// 自分が交換の当事者なら {P, rich}（took/gave は当事者にしか届かない）
+function xMine(){ const X=S&&S.xchg; if(!X) return null; const P=X.pairs.find(q=>q.rich===myId||q.poor===myId); return P?{P, rich:P.rich===myId}:null; }
+function xchgBox(){
+  const X=S.xchg, m=xMine(), mini=cs=>`<div class="xcards">${cs.map(c=>cardEl(c,"xc")).join("")}</div>`;
+  let h=`<div class="xhead">🎁 カード交換</div>`;
+  if(m && !m.rich){
+    const P=m.P;
+    h+=`<div class="xline">${esc(xTitle(P.rich))}に <b>${esc(xcList(P.took||[]))}</b> を取られた…</div>${mini(P.took||[])}`;
+    h+= P.ok && P.gave ? `<div class="xline ok">${esc(xTitle(P.rich))}から <b>${esc(xcList(P.gave))}</b> をもらった</div>${mini(P.gave)}`
+                       : `<div class="xline wait">${esc(xTitle(P.rich))}が渡すカードを選んでる…</div>`;
+  } else if(m && m.rich){
+    const P=m.P;
+    h+=`<div class="xline">${esc(xTitle(P.poor))}から <b>${esc(xcList(P.took||[]))}</b> をもらった</div>${mini(P.took||[])}`;
+    h+= P.ok && P.gave ? `<div class="xline ok">${esc(xTitle(P.poor))}に <b>${esc(xcList(P.gave))}</b> を渡した${S.xchg.on?"（みんなを待ってるよ）":""}</div>${mini(P.gave)}`
+                       : `<div class="xline wait">手札に緑のふちで光ってるのが、もらったカード</div>`;
+  } else {
+    h+=`<div class="xline">${X.pairs.map(P=>`<span class="xst ${P.ok?"ok":""}">${esc(xTitle(P.rich))} ${esc(nameOf(S,P.rich))}：${P.ok?"渡した":"選んでる…"}</span>`).join("")}</div>`;
+  }
+  return `<div class="xbox">${h}</div>`;
+}
 function seatHtml(p,x,y,small){
   const fin=S.finished.indexOf(p.id), lost=S.losers.includes(p.id);
   const cnt = S.counts && S.counts[p.id]!==undefined ? S.counts[p.id] : (S.hands[p.id]||[]).length;
@@ -35,16 +59,17 @@ function seatHtml(p,x,y,small){
   let stat;
   if(fin>=0) stat=`<span class="sstat win">${fin+1}位 上がり</span>`;
   else if(lost) stat=`<span class="sstat lose">最下位</span>`;
+  else if(xchgPending(S,p.id)) stat=`<span class="sstat think">🎁 選択中</span>`;
   else if(S.pending && S.pending.pid===p.id) stat=`<span class="sstat think">${S.pending.type==="seven"?"🎁 選択中":"💣 選択中"}</span>`;
   else if(S.passed.includes(p.id)) stat=`<span class="sstat pass">パス · ${esc(cnt)}枚</span>`;
   else stat=`<span class="sstat">${esc(cnt)}枚</span>`;
   const title=S.titles&&S.titles[p.id];
   const tobot = isHost() && mode==="online" && !p.bot && fin<0 && !lost ? `<button class="small ghost" data-bot="${esc(p.id)}" style="margin-top:3px;padding:3px 6px;font-size:10px">CPU交代</button>` : "";
   const talk = bubbles[p.id] && Date.now()-bubbles[p.id].at<4500;
-  return `<div data-seat="${esc(p.id)}" class="seat ${small?(S.order.length>=9?"xs":"sm"):""} ${talk?"talk":""} ${S.turn===p.id?"turn":""} ${fin>=0||lost?"out":""}" style="left:${x}%;top:${y}%">
+  return `<div data-seat="${esc(p.id)}" class="seat ${small?(S.order.length>=9?"xs":"sm"):""} ${talk?"talk":""} ${S.turn===p.id&&!xchgOn(S)?"turn":""} ${fin>=0||lost?"out":""}" style="left:${x}%;top:${y}%">
     ${bubbleHtml(p.id)}
     <div class="plate">${p.away?"💤":""}${esc(p.name)}</div>
-    <div class="avawrap"><div class="fan">${backs}</div>${avatar(p)}${title?`<span class="title ${title==="大富豪"?"gold":""}">${esc(title)}</span>`:""}</div>
+    <div class="avawrap"><div class="fan">${backs}</div>${avatar(p)}${title?`<span class="title ${title==="大富豪"?"gold":""}">${esc(title)}</span>`:""}${scoinHtml(p.id)}</div>
     ${stat}${tobot}</div>`;
 }
 
@@ -86,13 +111,13 @@ window.addEventListener("resize", ()=>{ applyWide(); layoutHand(); placeBar(); }
 window.addEventListener("orientationchange", ()=>setTimeout(()=>{ applyWide(); layoutHand(); placeBar(); },120));
 // 操作バーと「あなたの番」リボンを手札の上に置く。読み(offsetHeight)を先にまとめてから書く＝強制レイアウトを1回で済ませる
 function placeBar(){
-  const hand=document.getElementById("hand"), bar=document.getElementById("mebar"), rb=document.getElementById("ribbon");
+  const hand=document.getElementById("hand")||document.getElementById("betpanel"), bar=document.getElementById("mebar"), rb=document.getElementById("ribbon");
   if(!bar || !hand) return;                    // 神経衰弱の操作バーは別配置（手札なし）
   if(isLand()){                                // 横画面: 操作バーは右の列（CSS）。リボンはその真上
     bar.style.bottom=""; if(rb) rb.style.bottom=(bar.offsetHeight+SAFE.b+12)+"px"; return;
   }
   const hh=hand.offsetHeight, bh=rb?bar.offsetHeight:0;
-  bar.style.bottom=(hh+SAFE.b+4)+"px";
+  bar.style.bottom=(hand.id==="betpanel" ? (parseFloat(getComputedStyle(hand).bottom)||0)+hh+6 : hh+SAFE.b+4)+"px";
   if(rb) rb.style.bottom=(hh+SAFE.b+4+bh+4)+"px";
   fitField();
   // 登場アニメ中は席やリボンの矩形が動いているので、落ち着いてからもう一度だけ合わせ直す
@@ -126,6 +151,15 @@ function fitField(){
 function controls(){
   const myTurn=S.turn===myId, P=S.pending, cs=[...sel];
   const c={hint:"", label:"出す", enabled:false, pass:false, kind:"play", dim:null};
+  if(xchgOn(S)){
+    const m=xMine(), XP=xchgPending(S,myId);
+    if(XP){ c.kind="xgive"; c.label=`🎁 渡す（${cs.length}/${XP.k}）`; c.enabled=cs.length===XP.k;
+      c.hint= cs.length>XP.k ? `${esc(XP.k)}枚だけ選んでね（いま${esc(cs.length)}枚）` : `${esc(xTitle(XP.poor))}に渡すカードを${esc(XP.k)}枚選んでね`; return c; }
+    if(m && m.rich) c.hint="渡した！ ほかの人が選ぶのを待ってるよ";
+    else if(m) c.hint= m.P.ok ? "もらったカードは緑のふちで光ってるよ" : `${esc(xTitle(m.P.rich))}が渡すカードを選んでる…`;
+    else c.hint=`カード交換中…（${esc(S.xchg.pairs.filter(q=>!q.ok).map(q=>nameOf(S,q.rich)).join("、"))} が選んでる）`;
+    return c;
+  }
   if(P && P.pid===myId){
     if(P.type==="seven"){
       c.kind="give"; c.label=`🎁 渡す（${cs.length}/${P.n}）`; c.enabled=cs.length===P.n;
@@ -148,7 +182,10 @@ function controls(){
 function renderGame(){
   const rev=effRev(S);
   const myHand = mySort(S.hands[myId]||[], rev);
-  const myTurn = S.turn===myId;
+  const xon = xchgOn(S), XP = xon ? xchgPending(S,myId) : null, XM = xMine();
+  const gotSet = new Set(XM ? (XM.rich ? (XM.P.took||[]) : (XM.P.gave||[])) : []);       // もらったカード（手札にあるぶん）
+  const xshow = xon || !!(XM && S.lastPlayer===null);      // 交換中と、交換が終わってから最初の1枚が出るまでは、交換の記録を場に出す
+  const myTurn = S.turn===myId && !xon;
   const meP = S.players.find(p=>p.id===myId);
   const amIn = meP && !meP.away && S.order.includes(myId);
   [...sel].forEach(c=>{ if(!myHand.includes(c)) sel.delete(c); });
@@ -158,9 +195,10 @@ function renderGame(){
   const fsig = f ? f.cards.join()+f.by : "";
   const newField = fsig && fsig!==lastFieldSig; lastFieldSig=fsig;
   const newRound = S.round!==lastRound; lastRound=S.round;
-  const myMoment = myTurn && (!S.pending || S.pending.pid===myId);
+  if(newRound) sel.clear();
+  const myMoment = xon ? !!XP : myTurn && (!S.pending || S.pending.pid===myId);
   const turnStart = myTurn && !S.pending && lastTurn!==myId;
-  lastTurn=S.turn;
+  lastTurn = xon ? null : S.turn;
   const oldF=document.querySelector(".fieldcards");
   if(oldF && oldF.children.length) prevField={html:oldF.innerHTML, rect:oldF.getBoundingClientRect()};
 
@@ -177,6 +215,7 @@ function renderGame(){
   const fieldTop = isLand() ? (SAFE.t+118)/innerHeight*100 : isWide() ? 40 : others.length>5 ? 50 : others.length>=4 ? 47 : 42;
   const watchers = S.players.filter(p=>!S.order.includes(p.id));
   const HG = handGeom(myHand.length, tableW());
+  const bm = betMode();
   const bombPicker = C.kind==="bomb" ? `<div class="bombpick">${[3,4,5,6,7,8,9,10,11,12,13,14,15,16].map(r=>`<button class="${bombSel.has(r)?"on":""}" data-rank="${r}">${r===16?"🃏":RANK_LABEL(r)}</button>`).join("")}</div>` : "";
   app.innerHTML=`
   <div class="table ${myMoment?"myturn":""}">
@@ -187,17 +226,17 @@ function renderGame(){
       ${mode==="online"?chatBtn():""}${soundBtn("round")}<button class="round" id="menu" title="メニュー" aria-label="メニュー">≡</button>
     </div>
     ${seats}
-    <div class="field" style="top:${fieldTop}%">
+    <div class="field ${xshow?"xf":""}" style="top:${fieldTop}%">
       ${tags?`<div class="tags">${tags}</div>`:""}
-      ${f?`<div class="fieldcards">${f.cards.map(c=>cardEl(c)).join("")}</div><div class="fieldby">${esc(nameOf(S,f.by))}</div>`
+      ${xshow?xchgBox():f?`<div class="fieldcards">${f.cards.map(c=>cardEl(c)).join("")}</div><div class="fieldby">${esc(nameOf(S,f.by))}</div>`
          :`<div class="fieldby" style="opacity:.6">場は空っぽ</div>`}
     </div>
     ${amIn?`
-    <div class="mebar" id="mebar">
-      ${bubbleHtml(myId)}${firstHint("daifugo")}
+    <div class="mebar ${bm?"bmode":""}" id="mebar">
+      ${bubbleHtml(myId)}${bm?"":firstHint("daifugo")}
       <div class="meinfo">
         <div class="row" style="gap:5px;flex-wrap:nowrap">${miniAva(meP,34)}<div class="plate" style="${myMoment?"background:linear-gradient(#ffe08a,#f5b52e);color:#3a2600":""}">${esc(meP.name)}${myTitle?` · ${esc(myTitle)}`:""}</div></div>
-        <span class="sstat ${fin>=0?"win":lost?"lose":""}">${fin>=0?`${fin+1}位 上がり！`:lost?"最下位…":`${myHand.length}枚`}</span>
+        <span class="sstat ${fin>=0?"win":lost?"lose":""}">${fin>=0?`${fin+1}位 上がり！`:lost?"最下位…":`${myHand.length}枚`}</span>${mecoinHtml()}
       </div>
       <div class="mebtns">
         ${bombPicker}
@@ -205,15 +244,16 @@ function renderGame(){
         <div class="bb">${C.kind==="play"?`<button class="passbtn" id="pass" ${C.pass?"":"disabled"}>パス</button>`:""}<button id="play" ${C.enabled?"":"disabled"}>${C.label}</button></div>
       </div>
     </div>
-    ${myMoment?`<div class="ribbon" id="ribbon">${S.pending?"▶ 選んでね":"▶ あなたの番"}</div>`:""}
-    <div class="hand ${myMoment?"myturn":""}" id="hand" style="height:${HG.height}px">${myHand.map((c,i)=>cardEl(c,(sel.has(c)?"sel ":"")+(C.dim&&!C.dim.has(c)?"dim ":"")+(newRound?"deal":""),`--cw:${HG.cw}px;z-index:${HG.pos[i].z};transform:${handTf(HG.pos[i],sel.has(c)?24:0)};${newRound?`animation-delay:${i*40}ms`:""}`)).join("")}</div>`
-    :`<div class="mebar" style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次のラウンドから参加）":""}</div></div>`}
+    ${myMoment?`<div class="ribbon" id="ribbon">${xon?"▶ 渡すカードを選んでね":S.pending?"▶ 選んでね":"▶ あなたの番"}</div>`:""}
+    ${bm?betPanelHtml():`<div class="hand ${myMoment?"myturn":""}" id="hand" style="height:${HG.height}px">${myHand.map((c,i)=>cardEl(c,(sel.has(c)?"sel ":"")+(C.dim&&!C.dim.has(c)?"dim ":"")+(gotSet.has(c)?"got ":"")+(newRound?"deal":""),`--cw:${HG.cw}px;z-index:${HG.pos[i].z};transform:${handTf(HG.pos[i],sel.has(c)?24:0)};${newRound?`animation-delay:${i*40}ms`:""}`)).join("")}</div>`}`
+    :`<div class="mebar ${bm?"specbar":""}" ${bm?'id="mebar"':""} style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次のラウンドから参加）":""} ${scoinHtml(myId)?`<span class="cn">🪙 ${esc(cfmt(coinOf(myId)))}</span>`:""}</div></div>${bm?betPanelHtml():""}`}
   </div>
   ${menuOpen?menuHtml():""}`;
   layoutHand(); placeBar();
   if(turnStart) setTimeout(myTurnFx, 60);
   bindChips(); bindSound(); bindMenu(); bindChatBtn();
-  if(!amIn) return;
+  if(bm) bindBetPanel();
+  if(!amIn || bm) return;
   const hand=document.getElementById("hand");
   // 選択まわり。1回タップ=その1枚、素早く2回タップ=同じ数字で出せるカードをまとめて選ぶ（もう1回2連打で解除）、見た目で一番上のカードを拾う
   const syncSel=()=>{
@@ -237,6 +277,7 @@ function renderGame(){
       grp=[c,...grp.filter(x=>x!==c)];
       if(S.field && !S.pending && S.field.type==="group" && grp.length>S.field.cards.length) grp=grp.slice(0,S.field.cards.length);   // 場の枚数に合わせる
       if(P && P.type==="seven" && P.pid===myId) grp=grp.slice(0,P.n);
+      { const xp=xchgPending(S,myId); if(xp) grp=grp.slice(0,xp.k); }
       if(grp.every(x=>sel.has(x))) grp.forEach(x=>sel.delete(x)); else { grp.forEach(x=>sel.add(x)); if(grp.length>1) vib(12); }
       sfx("tap"); syncSel(); return;
     }
@@ -255,6 +296,7 @@ function renderGame(){
     ev.currentTarget.disabled=true; const pz=document.getElementById("pass"); if(pz) pz.disabled=true;
     const K=controls();
     if(K.kind==="give"){ const cards=[...sel]; sel.clear(); act({t:"give",cards}); }
+    else if(K.kind==="xgive"){ const cards=[...sel]; sel.clear(); act({t:"xgive",cards}); }
     else if(K.kind==="bomb"){ const ranks=[...bombSel]; bombSel.clear(); act({t:"bomb",ranks}); }
     else { const cards=[...sel]; sel.clear(); act({t:"play",cards}); }
   };
@@ -268,6 +310,7 @@ function menuHtml(){
     <div class="note" style="margin:10px 0">合言葉: <b>${esc(roomKey)}</b> ${inviteBtn()}</div>
     <div class="row" style="margin:8px 0"><button class="small" id="menuset">⚙ 設定</button><button class="small" id="menuhelp">❓ 遊び方</button></div>
     <div class="note"><b>このルール:</b> ${on.join(" / ")}</div>
+    ${standingsHtml()}
     ${isHost() && mode==="online" ? `<div class="note" style="margin-top:8px"><b>ホスト操作</b></div>
       <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px"><button class="small ${S.locked?"":"ghost"}" id="lockbtn">${S.locked?"🔒 鍵かかってる（開ける）":"🔓 部屋に鍵をかける"}</button></div>
       ${S.players.filter(p=>!p.bot && p.id!==myId).map(p=>`<div class="row" style="margin-top:4px"><span class="grow note">${esc(p.name)}</span><button class="small ghost danger" data-kick="${esc(p.id)}">追い出す</button></div>`).join("")}` : ""}
@@ -294,8 +337,12 @@ function renderResult(){
     <div class="sub">合言葉 <span class="code" style="font-size:15px">${esc(roomKey)}</span> ${inviteBtn()}</div>
     <div class="panel"><ol class="rank">${S.ranking.map(id=>`<li>${miniAva(S.players.find(p=>p.id===id)||{id,name:"?"},30)}<b>${esc(nameOf(S,id))}</b> <span class="badge ${["大富豪","UNO王","一抜け","記憶王"].includes(S.titles[id])?"gold":["大貧民","ババ持ち"].includes(S.titles[id])?"bad":""}">${esc(S.titles[id]||"")}</span>${S.game==="uno"&&S.u&&S.u.scores?`<span class="pts">${S.u.scores[id]??0}点</span>`:""}${S.game==="shinkei"&&S.k?`<span class="pts">${S.k.scores[id]??0}組</span>`:""}${id===myId?" ← あなた":""}</li>`).join("")}</ol>
       ${S.game==="uno"?`<div class="note">残った手札の点数が少ない順（数字=その数、記号=20、ワイルド=50）</div>`:""}</div>
+    ${coinBreakdownHtml()}
+    ${standingsHtml()}
+    ${S.sea&&S.sea.fin&&S.sea.cer?`<div class="btnrow"><button class="ghost" id="cerreplay">🏆 表彰式をもう一度見る</button></div>`:""}
     <div class="panel">${playerChips()}${startControls(true)}</div>
     ${timerPanel()}
+    ${seasonPanel()}
     ${gamePanel()}
     ${mode==="online"?chatPreview():""}
     ${rulesPanel()}
@@ -303,6 +350,7 @@ function renderResult(){
     <button class="ghost" id="leave">退出</button></div>`;
   bindChips(); bindRules(); bindSound(); bindInvite(); bindStart(true); bindChatBtn();
   document.getElementById("leave").onclick=leave;
+  const cr=document.getElementById("cerreplay"); if(cr) cr.onclick=()=>replayCeremony();
 }
 
 render();

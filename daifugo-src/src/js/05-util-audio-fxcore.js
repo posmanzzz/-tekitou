@@ -11,7 +11,7 @@ const store = {get(k){try{return localStorage.getItem(k)}catch(e){return null}},
 const sstore = {get(k){try{return sessionStorage.getItem(k)}catch(e){return null}}, set(k,v){try{sessionStorage.setItem(k,v)}catch(e){}}};
 const clone = o => JSON.parse(JSON.stringify(o));
 
-window.__dfg={bActive,bNext,bDraw,bPeek,kFlip,babaBot,shinkeiBot,parse,uCanPlay,uPlay,uDraw,uPass,uSeven,uCallUno,unoBot,unoStartRound,pU,nextRank,analyze,canPlay,doPlay,doPass,startRound,botMove,blankRoom,applyAction,viewFor,activeOf,effRev,DEFAULT_RULES,PRESETS,normState,cleanName,safeText,botStep,autoTurn,ID_OK,engineErrors:()=>engErr,engineLast:()=>engLast};
+window.__dfg={replaceId,coinAbort,coinEnsure,betOdds,betOddsView,betPay,betPlace,betEligible,cpuBetPick,prizeOf,standingsOf,coinSync,COIN_START,STAKES,SEASON_CHOICES,xchgGive,xchgOn,bActive,bNext,bDraw,bPeek,kFlip,babaBot,shinkeiBot,parse,uCanPlay,uPlay,uDraw,uPass,uSeven,uCallUno,unoBot,unoStartRound,pU,nextRank,analyze,canPlay,doPlay,doPass,startRound,botMove,blankRoom,applyAction,viewFor,activeOf,effRev,DEFAULT_RULES,PRESETS,normState,cleanName,safeText,botStep,autoTurn,ID_OK,engineErrors:()=>engErr,engineLast:()=>engLast};
 if(window.__DFG_TEST__) return;
 
 // =====================================================================
@@ -59,6 +59,8 @@ function sfx(k){
     case "turn": tone(1047,.12,"sine",.1); tone(1568,.18,"sine",.08,.1); break;
     case "deal": for(let i=0;i<6;i++) noise(.04,.1,i*.05,2500); break;
     case "chat": tone(1200,.06,"sine",.06); tone(1600,.08,"sine",.05,.06); break;
+    case "xtake": noise(.12,.18,0,1200); tone(320,.28,"sawtooth",.07,0,110); break;
+    case "xgive": [660,880,1100].forEach((f,i)=>tone(f,.14,"triangle",.07,i*.07)); break;
     case "seven": [700,900].forEach((f,i)=>tone(f,.12,"triangle",.08,i*.08)); break;
     case "bomb": noise(.6,.3,0,80); tone(90,.6,"sawtooth",.12,0,40); break;
     case "fanfare": [[523,0],[659,.12],[784,.24],[1047,.36],[784,.52],[1047,.62],[1319,.74]].forEach(([f,t])=>{ tone(f,.32,"square",.05,t); tone(f/2,.32,"triangle",.06,t); }); break;
@@ -278,7 +280,7 @@ const anim = (el,kf,opt) => { QG.kick(); try{ return el.animate(kf,opt); }catch(
 // 位置ヘルパ
 function centerOf(el){ const r=el.getBoundingClientRect(); return {x:r.left+r.width/2, y:r.top+r.height/2}; }
 function seatPoint(pid){
-  const el = pid===myId ? document.getElementById("hand") || document.getElementById("mebar") : document.querySelector(`[data-seat="${CSS.escape(pid)}"] .ava`);
+  const el = pid===myId ? document.getElementById("hand") || document.getElementById("betpanel") || document.getElementById("mebar") : document.querySelector(`[data-seat="${CSS.escape(pid)}"] .ava`);
   if(el) return centerOf(el);
   return {x:innerWidth/2, y:pid===myId?innerHeight-80:80};
 }

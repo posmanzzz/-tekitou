@@ -1,8 +1,8 @@
 /* Service worker of the 合言葉大富豪 PWA. Generated from sw.template.js by dist_build.py. */
 "use strict";
-const VERSION = "ef8786f13c98";
+const VERSION = "3bffc000dcd5";
 const CACHE = "dfg-" + VERSION;
-const SHELL = ["./", "app.css?v=ef8786f13c98", "app.js?v=ef8786f13c98", "icons/apple-touch-icon.png", "icons/favicon-32.png", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "index.html", "manifest.webmanifest", "peerjs.min.js?v=ef8786f13c98", "pwa.js?v=ef8786f13c98"];
+const SHELL = ["./", "app.css?v=3bffc000dcd5", "app.js?v=3bffc000dcd5", "icons/apple-touch-icon.png", "icons/favicon-32.png", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "index.html", "manifest.webmanifest", "peerjs.min.js?v=3bffc000dcd5", "pwa.js?v=3bffc000dcd5"];
 const SCOPE = self.registration.scope;
 
 self.addEventListener("install", (e) => {

@@ -10,6 +10,8 @@
 // =====================================================================
 const TM={pid:null, deadline:0};          // 表示用（この端末の時計）
 let HT={gv:-1, round:-1, actor:null, deadline:0, ext:false};   // ホスト専用
+const XT="*x";     // カード交換中の期限の持ち主（個人ではなく「交換ステップ」）
+function xchgPendingHumans(){ return S.xchg.pairs.filter(P=>!P.ok).map(P=>P.rich).filter(id=>{ const p=S.players.find(x=>x.id===id); return p && !p.bot && S.order.includes(id); }); }
 const HEAVY_FX=["finish","end","round","rev","bomb","eight","miyako","foul","kmatch","kmiss","ucolor","udraw","uzero","useven","afk","seven"];
 function timerActive(){ return mode==="online" && net==="p2p" && p2pHost && !!S && S.phase==="play" && S.tsec>0; }
 function timerGrace(){
@@ -20,6 +22,12 @@ function timerGrace(){
 }
 function timerSync(){
   if(!timerActive()){ HT.actor=null; if(mode==="online" && p2pHost) TM.pid=null; return; }
+  if(xchgOn(S)){   // カード交換: 渡す人（人間）全員が同じ期限。誰かが渡しても期限は延びない（時間切れは残りの人だけ弱いカードを自動で渡す）
+    const pend=xchgPendingHumans();
+    if(!pend.length){ HT={gv:S.gv, round:S.round, actor:null, deadline:0, ext:false}; TM.pid=null; return; }
+    if(HT.actor!==XT || HT.round!==S.round) HT={gv:-2, round:S.round, actor:XT, deadline:Date.now()+S.tsec*1000+timerGrace(), ext:false};
+    TM.pid=pend[0]; TM.deadline=HT.deadline; return;
+  }
   const p=S.players.find(x=>x.id===S.turn);
   if(!p || p.bot || p.away || !S.order.includes(p.id)){ HT={gv:S.gv, round:S.round, actor:null, deadline:0, ext:false}; TM.pid=null; return; }   // CPUの手番に期限はない
   if(HT.gv!==S.gv || HT.round!==S.round || HT.actor!==p.id) HT={gv:S.gv, round:S.round, actor:p.id, deadline:Date.now()+S.tsec*1000+timerGrace(), ext:false};
@@ -28,7 +36,7 @@ function timerSync(){
 function timerInfo(){
   timerSync();
   if(!timerActive() || !HT.actor) return {tr:null, tp:null};
-  return {tr:Math.max(0,HT.deadline-Date.now()), tp:HT.actor};
+  return {tr:Math.max(0,HT.deadline-Date.now()), tp:HT.actor===XT?TM.pid:HT.actor};
 }
 function timerRecv(tr,tp){
   if(typeof tr==="number" && Number.isFinite(tr) && tr>=0 && ID_OK(tp)){ TM.pid=tp; TM.deadline=Date.now()+Math.min(tr,125000); }
@@ -44,6 +52,7 @@ setInterval(()=>{
     if(now<HT.deadline) return;
     if(fxBusy() && !HT.ext){ HT.ext=true; HT.deadline=now+2500; TM.deadline=HT.deadline; return; }
     const id=HT.actor; HT.actor=null;           // 二重に撃たない（状態が変われば作り直される）
+    if(id===XT){ for(const pid of xchgPendingHumans()) hostApply(myId,{t:"auto",id:pid}); return; }
     hostApply(myId,{t:"auto",id});
   }catch(e){ pushErr("timer",e); }
 },400);
@@ -51,6 +60,7 @@ setInterval(()=>{
 // ---- 表示（席のカウントダウン / 自分の最後5秒の警告 / 離席表示） ----
 let tmLastSec=-1, tmTotal=30000, tmTotalPid=null, tmLastMs=0;
 function timerUi(){
+  if(TM.pid && S && xchgOn(S) && xchgPending(S,myId)) TM.pid=myId;      // 交換中は、渡す側の自分には自分のタイマーを見せる（期限は全員共通）
   const play = !!S && screen==="room" && mode==="online" && S.phase==="play" && TM.pid;
   document.querySelectorAll(".tmr,.tring").forEach(e=>{ if(!play || e.dataset.pid!==TM.pid) e.remove(); });
   const warn=document.getElementById("tmwarn");

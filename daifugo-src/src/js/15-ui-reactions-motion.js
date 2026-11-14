@@ -97,6 +97,7 @@ function yokokuFor(list){
     else if(e.k==="udraw" && e.total>=4) lv=Math.max(lv,e.total>=8?4:2);
     else if(e.k==="uno") lv=Math.max(lv,1);
     else if(e.k==="kmatch" && e.combo>=2) lv=Math.max(lv,e.combo>=3?3:1);
+    else if(e.k==="bset" && (e.bi||[]).some((id,i)=>e.bp[i]>0 && bigBet(e.bm[i],e.bp[i]))) lv=Math.max(lv,3);
     else if(e.k==="bdraw" && e.priv && parse(e.priv.card).r===16) lv=Math.max(lv,3);
   }
   if(lv<0){

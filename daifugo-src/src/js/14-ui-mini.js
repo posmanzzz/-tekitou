@@ -11,7 +11,7 @@ function genSeatHtml(p,x,y,small,stat,cls="",backs=true){
   return `<div data-seat="${esc(p.id)}" class="seat ${small?(S.order.length>=9?"xs":"sm"):""} ${talk?"talk":""} ${S.turn===p.id?"turn":""} ${cls}" style="left:${x}%;top:${y}%">
     ${bubbleHtml(p.id)}
     <div class="plate">${p.away?"💤":""}${esc(p.name)}</div>
-    <div class="avawrap"><div class="fan">${fan}</div>${avatar(p)}${title?`<span class="title ${["一抜け","記憶王"].includes(title)?"gold":""}">${esc(title)}</span>`:""}</div>
+    <div class="avawrap"><div class="fan">${fan}</div>${avatar(p)}${title?`<span class="title ${["一抜け","記憶王"].includes(title)?"gold":""}">${esc(title)}</span>`:""}${scoinHtml(p.id)}</div>
     ${stat}${tobot}</div>`;
 }
 function othersOf(){ const ord=S.order, mi=ord.indexOf(myId); return mi>=0 ? ord.slice(mi+1).concat(ord.slice(0,mi)) : ord.slice(); }
@@ -58,6 +58,7 @@ function renderBaba(){
   const HG=handGeom(hand.length, tableW());
   const aimedI = B.hover && B.hover.to===myId ? B.hover.i : -1;
   const myMoment = myTurn;
+  const bm = betMode();
   app.innerHTML=`
   <div class="table baba ${myMoment?"myturn":""}">
     ${tableTop("",myMoment,`ババ抜き 第${esc(S.round)}回戦`)}
@@ -68,11 +69,11 @@ function renderBaba(){
       <div class="bpile">🗑 捨てたペア <b>${esc(pairs)}</b>組</div>
     </div>
     ${amIn?`
-    <div class="mebar" id="mebar">
-      ${bubbleHtml(myId)}${firstHint("baba")}
+    <div class="mebar ${bm?"bmode":""}" id="mebar">
+      ${bubbleHtml(myId)}${bm?"":firstHint("baba")}
       <div class="meinfo">
         <div class="row" style="gap:5px;flex-wrap:nowrap">${miniAva(meP,34)}<div class="plate" style="${myMoment?"background:linear-gradient(#ffe08a,#f5b52e);color:#3a2600":""}">${esc(meP.name)}</div></div>
-        <span class="sstat">${meOut?(S.finished.includes(myId)?`${S.finished.indexOf(myId)+1}位 上がり`:"ババ持ち"):`${hand.length}枚`}</span>
+        <span class="sstat">${meOut?(S.finished.includes(myId)?`${S.finished.indexOf(myId)+1}位 上がり`:"ババ持ち"):`${hand.length}枚`}</span>${mecoinHtml()}
       </div>
       <div class="mebtns">
         <div class="hint" id="hint" aria-live="polite">${meOut?"上がり！観戦中":myTurn?(B.hover&&B.hover.by===myId?"もう1回タップか「引く」で決定":"カードをタップして選ぶ（相手にも見えるよ）"):aimedI>=0?"👆 光ってるカードが狙われてる…シャッフルで逃げろ":`${esc(nameOf(S,S.turn))} の番…`}</div>
@@ -83,8 +84,8 @@ function renderBaba(){
       </div>
     </div>
     ${myMoment?`<div class="ribbon" id="ribbon">▶ あなたの番</div>`:""}
-    <div class="hand ${myMoment?"myturn":""}" id="hand" style="height:${HG.height}px">${hand.map((c,i)=>cardEl(c,(i===aimedI?"aimed ":"")+(newRound?"deal":""),`--cw:${HG.cw}px;z-index:${HG.pos[i].z};transform:${handTf(HG.pos[i],i===aimedI?20:0)};${newRound?`animation-delay:${i*40}ms`:""}`)).join("")}</div>`
-    :`<div class="mebar" style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次の回戦から参加）":""}</div></div>`}
+    ${bm?betPanelHtml():`<div class="hand ${myMoment?"myturn":""}" id="hand" style="height:${HG.height}px">${hand.map((c,i)=>cardEl(c,(i===aimedI?"aimed ":"")+(newRound?"deal":""),`--cw:${HG.cw}px;z-index:${HG.pos[i].z};transform:${handTf(HG.pos[i],i===aimedI?20:0)};${newRound?`animation-delay:${i*40}ms`:""}`)).join("")}</div>`}`
+    :`<div class="mebar ${bm?"specbar":""}" ${bm?'id="mebar"':""} style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次の回戦から参加）":""} ${S.coins?`<span class="cn">🪙 ${esc(cfmt(coinOf(myId)))}</span>`:""}</div></div>${bm?betPanelHtml():""}`}
   </div>
   ${menuOpen?menuHtml():""}`;
   layoutHand(); placeBar();
@@ -92,6 +93,7 @@ function renderBaba(){
   const hs = aimedI>=0 ? S.v+":"+aimedI : ""; if(aimedI>=0 && hs.split(":")[1]!==lastHoverSig.split(":")[1]){ sfx("tap"); vib(15); } lastHoverSig=hs;
   if(turnStart) setTimeout(myTurnFx, 60);
   bindChips(); bindSound(); bindMenu(); bindChatBtn();
+  if(bm) bindBetPanel();
   if(!amIn) return;
   const fan=document.getElementById("bfan");
   if(fan && myTurn) fan.onclick=e=>{
@@ -157,9 +159,9 @@ function renderShinkei(){
   if(kPrevRound!==S.round){ kPrevVis=new Set(); kPrevRound=S.round; }
   const strip = S.order.map(id=>{ const p=S.players.find(x=>x.id===id); if(!p) return "";
     const talk = bubbles[id] && Date.now()-bubbles[id].at<4500;
-    return `<div data-seat="${esc(id)}" class="kchip ${S.turn===id?"turn":""} ${id===myId?"me":""} ${talk?"talk":""}">${bubbleHtml(id)}${avatar(p)}<div class="kn">${p.away?"💤":""}${esc(p.name)}</div><div class="ks"><b>${esc(K.scores[id]||0)}</b>組</div></div>`; }).join("");
+    return `<div data-seat="${esc(id)}" class="kchip ${S.turn===id?"turn":""} ${id===myId?"me":""} ${talk?"talk":""}">${bubbleHtml(id)}${avatar(p)}<div class="kn">${p.away?"💤":""}${esc(p.name)}</div><div class="ks"><b>${esc(K.scores[id]||0)}</b>組</div>${S.coins?`<div class="kc">🪙${esc(cfmt(coinOf(id)))}</div>`:""}</div>`; }).join("");
   const W=Math.min(isLand()?tableW():(app.clientWidth||innerWidth), isWide()?1500:600)-20;
-  const hintX = !isLand() && amIn && firstHint("shinkei") ? 34 : 0;   // 初回ヒント行ぶん、盤の下端と「あなたの番」リボンを上げる
+  const hintX = !isLand() && amIn && firstHint("shinkei") ? 36 : 0;   // 初回ヒント行ぶん、盤の下端と「あなたの番」リボンを上げる
   const top = SAFE.t + (isLand()?112:isWide()?178:162), bottom = SAFE.b + (isLand()?8:isWide()?110:96) + hintX;
   const H=innerHeight-top-bottom;
   const G=kGrid(K.board.length, W, H);
@@ -184,12 +186,12 @@ function renderShinkei(){
       ${bubbleHtml(myId)}${firstHint("shinkei")}
       <div class="meinfo">
         <div class="row" style="gap:5px;flex-wrap:nowrap">${miniAva(meP,34)}<div class="plate" style="${myMoment?"background:linear-gradient(#ffe08a,#f5b52e);color:#3a2600":""}">${esc(meP.name)}</div></div>
-        <span class="sstat">${esc(K.scores[myId]||0)}組 · 残り${(total-left)/2}組</span>
+        <span class="sstat">${esc(K.scores[myId]||0)}組 · 残り${(total-left)/2}組</span>${mecoinHtml()}
       </div>
       <div class="mebtns"><div class="hint" id="hint" aria-live="polite">${myTurn?(K.up.length?"もう1枚めくって！":(K.combo?`🔥 ${K.combo}連続！もう1回`:"2枚めくってね")):`${esc(nameOf(S,S.turn))} の番…`}</div></div>
     </div>
     ${myMoment&&!isLand()?`<div class="ribbon" id="ribbon" style="bottom:${bottom-14}px">▶ あなたの番</div>`:""}`
-    :`<div class="mebar" style="bottom:20px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中</div></div>`}
+    :`<div class="mebar" style="bottom:20px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中 ${S.coins?`<span class="cn">🪙 ${esc(cfmt(coinOf(myId)))}</span>`:""}</div></div>`}
   </div>
   ${menuOpen?menuHtml():""}`;
   if(turnStart){ sfx("turn"); vib([30,40,30]); banner("あなたの番！","myturn",false,true); }

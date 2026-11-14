@@ -162,6 +162,11 @@ function replaceId(s, oldId, newId){
   if(s.field && s.field.by===oldId) s.field.by=newId;
   if(s.pending){ if(s.pending.pid===oldId) s.pending.pid=newId; if(s.pending.to===oldId) s.pending.to=newId; }
   if(s.after && s.after.pid===oldId) s.after.pid=newId;
+  for(const k of ["coins","bl","rb","rl"]) if(isObj(s[k]) && s[k][oldId]!==undefined){ s[k][newId]=s[k][oldId]; delete s[k][oldId]; }
+  if(isObj(s.bl)) for(const k in s.bl) if(s.bl[k].on===oldId) s.bl[k].on=newId;
+  if(s.sea && Array.isArray(s.sea.cer)) s.sea.cer=s.sea.cer.map(x=>x===oldId?newId:x);
+  if(s.bet){ s.bet.cand=s.bet.cand.map(x=>x===oldId?newId:x); for(const b of s.bet.bets){ if(b.id===oldId) b.id=newId; if(b.on===oldId) b.on=newId; } }
+  if(s.xchg) for(const P of s.xchg.pairs){ if(P.rich===oldId) P.rich=newId; if(P.poor===oldId) P.poor=newId; }
   if(s.u){
     if(s.u.drew && s.u.drew.pid===oldId) s.u.drew.pid=newId;
     if(s.u.pending && s.u.pending.pid===oldId) s.u.pending.pid=newId;

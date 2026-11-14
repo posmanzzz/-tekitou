@@ -23,7 +23,7 @@ const RULE_DEFS = [
   {k:"foul",    name:"反則上がり",desc:"JK・2・8で上がると最下位"},
   {k:"seven",   name:"7渡し",     desc:"7の枚数だけ次の人に渡す"},
   {k:"bomb",    name:"12ボンバー",desc:"Qの枚数だけ数字を指定→全員捨てる"},
-  {k:"exchange",name:"カード交換",desc:"2戦目から階級で交換"},
+  {k:"exchange",name:"カード交換",desc:"2戦目から。貧民の強いカードは自動で取られ、富豪は好きなカードを選んで渡す"},
 ];
 const MAX_PLAYERS = 10;
 const DEFAULT_RULES = {eight:true,rev:true,seq:true,spade3:true,eb:false,shibari:false,five:false,miyako:false,foul:false,seven:false,bomb:false,stair:false,exchange:true,jokers:1};
@@ -78,6 +78,7 @@ function analyze(cards, rules){
 // 出せるなら ""、出せないなら理由
 function canPlay(s, pid, cards){
   if(s.phase!=="play" || s.turn!==pid) return "あなたの番じゃない";
+  if(xchgOn(s)) return "カード交換が終わるまで待ってね";
   if(s.pending) return "選択中";
   if(!cards.length) return "カードを選んでね";
   const hand = s.hands[pid]||[];
@@ -139,7 +140,8 @@ function nextRank(r, rev){ const t=st(r,rev)+1; for(let x=3;x<=15;x++) if(st(x,r
 function blankRoom(hostId){
   return {v:0, host:hostId, players:[], phase:"lobby", order:[], hands:{}, counts:{}, field:null, rev:false, eb:false, lock:null,
           turn:null, passed:[], finished:[], losers:[], ranking:[], lastPlayer:null, log:[], round:0, titles:{}, prevFinish:[],
-          rules:{...DEFAULT_RULES}, game:"daifugo", urules:{...UNO_DEFAULT}, u:null, b:null, k:null, fair:true, locked:false, banned:[], tsec:30, fx:{n:0,k:[]}, updatedAt:Date.now()};
+          rules:{...DEFAULT_RULES}, game:"daifugo", urules:{...UNO_DEFAULT}, u:null, b:null, k:null, fair:true, locked:false, banned:[], tsec:30, fx:{n:0,k:[]}, updatedAt:Date.now(),
+          coins:{}, sea:{len:5,n:0,fin:false,no:1,cer:null}, bet:null, bk:0, bv:0, bl:{}, rb:{}, rl:{}};
 }
 
 function startRound(s){
@@ -157,22 +159,70 @@ function startRound(s){
   const prev = s.prevFinish||[];
   const same = prev.length===ids.length && prev.every(id=>ids.includes(id));
   s.sameMembers = same && s.round>1;
-  if(s.sameMembers && s.rules.exchange && ids.length>=2){
-    const N=ids.length;
-    const pairs=[[prev[0],prev[N-1],N>=3?2:1]];
-    if(N>=4) pairs.push([prev[1],prev[N-2],1]);
-    for(const [rich,poor,k] of pairs){
-      const strong = sortHand(s.hands[poor],false).slice(-k);
-      const weak = sortHand(s.hands[rich].filter(c=>!strong.includes(c)),false).slice(0,k);
-      s.hands[poor]=s.hands[poor].filter(c=>!strong.includes(c)).concat(weak);
-      s.hands[rich]=s.hands[rich].filter(c=>!weak.includes(c)).concat(strong);
-      log(s,`交換: ${nameOf(s,poor)}→${nameOf(s,rich)} ${k}枚`);
-    }
-  }
+  s.xchg=null;
   s.turn = s.sameMembers ? prev[prev.length-1] : (ids.find(id=>s.hands[id].includes("D3")) || ids[0]);
-  log(s,`${nameOf(s,s.turn)} から開始`);
+  if(s.sameMembers && s.rules.exchange && ids.length>=2){
+    // 貧民側の強いカードは自動で取り上げ（ジョーカーが最強）。富豪側は「もらったカードを見てから」好きなカードを選んで返す（xchgGive）
+    const N=ids.length;
+    const specs=[[prev[0],prev[N-1],N>=3?2:1]];
+    if(N>=4) specs.push([prev[1],prev[N-2],1]);
+    s.xchg={on:true, pairs:[]};
+    for(const [rich,poor,k] of specs){
+      if(rich===poor) continue;
+      const took = byStrength(s.hands[poor]).slice(-k);
+      s.hands[poor]=s.hands[poor].filter(c=>!took.includes(c));
+      s.hands[rich]=s.hands[rich].concat(took);
+      s.xchg.pairs.push({rich, poor, k, ok:false, took, gave:null});
+      log(s,`交換: ${nameOf(s,rich)} が ${nameOf(s,poor)} から${k}枚を召し上げ`);
+      fx(s,"xtake",{from:poor, to:rich, n:k, priv:{ids:[poor,rich], cards:took.slice()}});
+    }
+    if(!s.xchg.pairs.length) s.xchg=null;
+  }
   s.phase="play";
+  if(s.xchg) xchgAdvance(s);
+  else log(s,`${nameOf(s,s.turn)} から開始`);
 }
+
+// ---- カード交換（2戦目以降）----
+// s.xchg = {on, pairs:[{rich,poor,k,ok,took,gave}]}。on=true の間は誰もカードを出せない。took/gave は当事者2人にだけ見せる（viewFor）。
+const xchgOn = s => !!(s && s.xchg && s.xchg.on);
+// 強さ順（弱→強）。ジョーカー最強、同じ強さはマーク順→文字列で決める（決定的）
+function byStrength(h){
+  return h.slice().sort((a,b)=>{const A=parse(a),B=parse(b);return st(A.r,false)-st(B.r,false)||SUITS.indexOf(A.s)-SUITS.indexOf(B.s)||(a<b?-1:a>b?1:0);});
+}
+function xchgDo(s,P,cards){
+  s.hands[P.rich]=s.hands[P.rich].filter(c=>!cards.includes(c));
+  s.hands[P.poor]=s.hands[P.poor].concat(cards);
+  P.gave=cards.slice(); P.ok=true;
+  log(s,`🎁 ${nameOf(s,P.rich)} → ${nameOf(s,P.poor)} にカードを渡した`);
+  fx(s,"xgive",{from:P.rich, to:P.poor, n:P.k, priv:{ids:[P.rich,P.poor], cards:cards.slice()}});
+  xchgCheckDone(s);
+  return true;
+}
+function xchgGive(s,pid,cards){
+  const P = xchgOn(s) && s.phase==="play" ? s.xchg.pairs.find(x=>x.rich===pid && !x.ok) : null;
+  if(!P) return "今は渡せない";
+  const h=s.hands[pid]||[];
+  if(new Set(cards).size!==cards.length || cards.length!==P.k || !cards.every(c=>h.includes(c))) return `${P.k}枚選んでね`;
+  return xchgDo(s,P,cards);
+}
+function xchgCheckDone(s){
+  if(!xchgOn(s) || !s.xchg.pairs.every(P=>P.ok)) return;
+  s.xchg.on=false;
+  log(s,`交換おわり！ ${nameOf(s,s.turn)} から開始`);
+  fx(s,"xdone",{who:s.turn});
+}
+// CPU・離席の人が渡す番なら、いちばん弱いカードをすぐ渡す（人間がCPUに替わった時もここで拾うので、交換が詰まらない）
+function xchgAdvance(s){
+  if(!xchgOn(s)) return;
+  for(const P of s.xchg.pairs){
+    if(P.ok) continue;
+    const pl=s.players.find(p=>p.id===P.rich);
+    if(!pl || pl.bot) xchgDo(s,P,byStrength(s.hands[P.rich]).slice(0,P.k));
+  }
+  xchgCheckDone(s);
+}
+function xchgPending(s,pid){ return xchgOn(s) ? s.xchg.pairs.find(x=>x.rich===pid && !x.ok)||null : null; }
 
 function endRound(s){
   const rank = s.finished.concat(activeOf(s), s.losers.slice().reverse());
@@ -312,6 +362,7 @@ function botPending(s){
 
 function doPass(s,pid){
   if(s.phase!=="play" || s.turn!==pid) return "あなたの番じゃない";
+  if(xchgOn(s)) return "カード交換が終わるまで待ってね";
   if(s.pending) return "選択中";
   if(!s.field) return "親はパスできない";
   s.passed.push(pid);
@@ -335,7 +386,7 @@ function combos(arr,k){
   rec(0,[]); return out;
 }
 function candidates(s,pid){
-  if(s.pending || s.turn!==pid) return [];
+  if(s.pending || s.turn!==pid || xchgOn(s)) return [];
   const hand=s.hands[pid]||[], R=s.rules;
   const jokers=hand.filter(isJoker);
   const byRank={};

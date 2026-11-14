@@ -141,7 +141,8 @@ function nextRank(r, rev){ const t=st(r,rev)+1; for(let x=3;x<=15;x++) if(st(x,r
 function blankRoom(hostId){
   return {v:0, host:hostId, players:[], phase:"lobby", order:[], hands:{}, counts:{}, field:null, rev:false, eb:false, lock:null,
           turn:null, passed:[], finished:[], losers:[], ranking:[], lastPlayer:null, log:[], round:0, titles:{}, prevFinish:[],
-          rules:{...DEFAULT_RULES}, game:"daifugo", urules:{...UNO_DEFAULT}, u:null, b:null, k:null, fair:true, locked:false, banned:[], tsec:30, fx:{n:0,k:[]}, updatedAt:Date.now()};
+          rules:{...DEFAULT_RULES}, game:"daifugo", urules:{...UNO_DEFAULT}, u:null, b:null, k:null, fair:true, locked:false, banned:[], tsec:30, fx:{n:0,k:[]}, updatedAt:Date.now(),
+          coins:{}, sea:{len:5,n:0,fin:false,no:1,cer:null}, bet:null, bk:0, bv:0, bl:{}, rb:{}, rl:{}};
 }
 
 function startRound(s){
@@ -855,6 +856,10 @@ function replaceId(s, oldId, newId){
   if(s.field && s.field.by===oldId) s.field.by=newId;
   if(s.pending){ if(s.pending.pid===oldId) s.pending.pid=newId; if(s.pending.to===oldId) s.pending.to=newId; }
   if(s.after && s.after.pid===oldId) s.after.pid=newId;
+  for(const k of ["coins","bl","rb","rl"]) if(isObj(s[k]) && s[k][oldId]!==undefined){ s[k][newId]=s[k][oldId]; delete s[k][oldId]; }
+  if(isObj(s.bl)) for(const k in s.bl) if(s.bl[k].on===oldId) s.bl[k].on=newId;
+  if(s.sea && Array.isArray(s.sea.cer)) s.sea.cer=s.sea.cer.map(x=>x===oldId?newId:x);
+  if(s.bet){ s.bet.cand=s.bet.cand.map(x=>x===oldId?newId:x); for(const b of s.bet.bets){ if(b.id===oldId) b.id=newId; if(b.on===oldId) b.on=newId; } }
   if(s.xchg) for(const P of s.xchg.pairs){ if(P.rich===oldId) P.rich=newId; if(P.poor===oldId) P.poor=newId; }
   if(s.u){
     if(s.u.drew && s.u.drew.pid===oldId) s.u.drew.pid=newId;
@@ -909,7 +914,7 @@ function autoTurn(s,pid){
 const TIMER_CHOICES=[0,15,30,60];
 function afkClear(s,p){ if(p.afk){ delete p.afk; p.bot=false; p.away=false; log(s,`${p.name} が戻ってきた`); } if(p.to) delete p.to; }
 // 本人の操作ではない（ホスト運営・CPU・退出）アクション。これらでは「離席」を解除しない
-const NOT_SELF_ACTS=["bot","auto","tobot","disc","drop","prune","kick","rm","addbot","timer","leave","rules","urules","game","lock","fair","pub","start","next"];
+const NOT_SELF_ACTS=["cbet","season","bot","auto","tobot","disc","drop","prune","kick","rm","addbot","timer","leave","rules","urules","game","lock","fair","pub","start","next"];
 
 // エンジンが内部で捕まえた例外の数と最後の例外（テスト用。通常は0のはず）
 let engErr=0, engLast=null;
@@ -929,6 +934,7 @@ function applyAction(s, actor, a){
 function applyActionInner(s, actor, a){
   s.fxk=[];
   const host = actor===s.host;
+  const ph0=s.phase;
   let r=false;
   const me0=s.players.find(p=>p.id===actor);
   switch(a.t){
@@ -1034,6 +1040,7 @@ function applyActionInner(s, actor, a){
       if(!host || s.phase==="play" || s.players.length<2) break;
       const notReady=s.players.filter(p=>!p.bot && !p.offline && p.id!==s.host && !p.ready);
       if(notReady.length && !a.force){ r=`${notReady.map(p=>p.name).join("、")} の準備待ち`; break; }
+      coinPreRound(s);
       if(s.game==="uno"){ if(!s.urules) s.urules={...UNO_DEFAULT}; unoStartRound(s); } else if(s.game==="baba") babaStart(s); else if(s.game==="shinkei") shinkeiStart(s); else startRound(s);
       r=true; break;
     }
@@ -1086,13 +1093,21 @@ function applyActionInner(s, actor, a){
       }
       break;
     }
+    case "bet": r=betPlace(s,actor,a.on,a.stake); break;
+    case "cbet": {   // ホスト専用: CPUの賭け（人間の代わりをしている離席CPUは賭けない）
+      if(!host || typeof a.id!=="string") break;
+      const p=s.players.find(x=>x.id===a.id); if(!p || !p.bot || p.away) break;
+      r=betPlace(s,p.id,a.on,a.stake); break;
+    }
+    case "season": if(host && s.phase!=="play" && SEASON_CHOICES.includes(a.len)){ coinEnsure(s); s.sea.len=a.len; log(s, a.len?`🏆 ${a.len}回戦で表彰`:"🏆 表彰なし"); r=true; } break;
     case "back": { const p=s.players.find(x=>x.id===actor); if(p && p.afk){ afkClear(s,p); r=true; } break; }
   }
   if(r===true && me0 && !NOT_SELF_ACTS.includes(a.t)){ const p=s.players.find(x=>x.id===actor); if(p && (p.afk || p.to)) afkClear(s,p); }
   if(r===true && s.game==="daifugo" && xchgOn(s)) xchgAdvance(s);      // CPU/離席になった人の分を渡す・全員済んだら開始
+  if(r===true) coinSync(s,ph0);
   if(r===true){
     s.v=(s.v||0)+1; s.updatedAt=Date.now();
-    if(a.t!=="chat" && a.t!=="throw") s.gv=(s.gv||0)+1;          // ゲームに関わる変化の番号（チャットだけなら増えない）
+    if(a.t!=="chat" && a.t!=="throw" && a.t!=="bet" && a.t!=="cbet") s.gv=(s.gv||0)+1;       // 賭けは gv を進めない（制限時間・CPUの手を巻き込まない）          // ゲームに関わる変化の番号（チャットだけなら増えない）
     s.counts={}; for(const id in s.hands) s.counts[id]=s.hands[id].length;
     if(s.fxk.length) s.fx={n:((s.fx&&s.fx.n)||0)+1, k:s.fxk};
   }
@@ -1187,6 +1202,21 @@ function normState(r){
       miss:Array.isArray(k.miss)&&k.miss.length===2&&k.miss.every(i=>Number.isInteger(i)&&i>=0&&i<54)?k.miss.slice():null,
       taken:tk, scores:idMap(k.scores,x=>int(x,0,0,60)), combo:int(k.combo,0,0,99), mem};
   } else S.k=null;
+  { // コイン経済
+    const sgn=(x,d=0,lo=-1e9,hi=1e9)=>{ x=typeof x==="number" && Number.isFinite(x) ? Math.trunc(x) : d; return Math.min(hi,Math.max(lo,x)); };
+    S.coins=idMap(r.coins,x=>int(x,COIN_START,0,1e9));
+    for(const p of S.players) if(S.coins[p.id]===undefined) S.coins[p.id]=COIN_START;
+    const sea=isObj(r.sea)?r.sea:{};
+    S.sea={len:SEASON_CHOICES.includes(sea.len)?sea.len:5, n:int(sea.n,0,0,9999), fin:sea.fin===true, no:int(sea.no,1,1,9999), cer:Array.isArray(sea.cer)?ids(sea.cer,12):null};
+    S.bk=int(r.bk); S.bv=int(r.bv);
+    S.bet = isObj(r.bet) && Array.isArray(r.bet.cand) ? {k:int(r.bet.k), f:int(r.bet.f,0,0,99), cand:ids(r.bet.cand,12),
+      bets:(Array.isArray(r.bet.bets)?r.bet.bets:[]).filter(b=>isObj(b)&&idv(b.id)&&idv(b.on)&&STAKES.includes(b.stake)).slice(0,12).map(b=>({id:b.id,on:b.on,stake:b.stake,m:int(b.m,11,11,120)}))} : null;
+    S.bl=idMap(r.bl,x=>isObj(x)?{on:idv(x.on)||"",stake:int(x.stake,0,0,1000),m:int(x.m,11,11,120),r:["w","l","x"].includes(x.r)?x.r:"l",pay:int(x.pay,0,0,1e6)}:null);
+    for(const k of Object.keys(S.bl)) if(!S.bl[k]) delete S.bl[k];
+    S.rb=idMap(r.rb,x=>({p:sgn(isObj(x)?x.p:0),b:sgn(isObj(x)?x.b:0)}));
+    S.rl=idMap(r.rl,x=>sgn(x));
+    for(const m of [S.coins,S.bl,S.rb,S.rl]) for(const k of Object.keys(m)) if(!seen.has(k)) delete m[k];       // 席のない人のデータは持たない
+  }
   S.chat=Array.isArray(r.chat) ? r.chat.filter(isObj).slice(-40).map(m=>({id:int(m.id), by:idv(m.by)||"", name:cleanName(typeof m.name==="string"?m.name:""), text:str(m.text,80), at:int(m.at,0,0,1e15), ...(m.n>1?{n:int(m.n,1,1,999)}:{})})) : [];
   S.thr = isObj(r.thr) ? {n:int(r.thr.n), k:Array.isArray(r.thr.k)?r.thr.k.filter(x=>isObj(x)&&THROW_ITEMS_E.includes(x.item)&&idv(x.from)&&idv(x.to)).slice(-6).map(x=>({n:int(x.n),from:x.from,to:x.to,item:x.item})):[]} : {n:0,k:[]};
   // 演出イベント: 1段のプリミティブ/短い配列/priv{ids,card}だけ通す
@@ -1206,6 +1236,184 @@ function normState(r){
     if(!S.order.length) return null;
   }
   return S;
+}
+
+// =====================================================================
+// コイン経済（順位賞金 / 「次に上がるのは誰？」ベット / シーズンと表彰式）
+// 状態（すべて部屋の状態に載る。公開情報）:
+//   s.coins {id:n}      残高。全員1000スタート、シーズン開始でリセット
+//   s.sea   {len,n,fin,no,cer}  len=表彰までの回戦数(0=なし/3/5/10) n=このシーズンで始まった回戦数 fin=表彰済み no=シーズン番号 cer=最終順位(id配列)
+//   s.bet   {k,f,cand:[id],bets:[{id,on,stake,m}]}  いま開いているマーケット。k=通し番号 f=開いた時の finished 人数 m=倍率の10倍(整数)。賭け金は置いた時点で残高から引く（預かり）
+//   s.bk    マーケットの通し番号カウンタ
+//   s.bl    {id:{on,stake,m,r:"w"|"l"|"x",pay}}  各自の直近のベット結果（x=返金）
+//   s.rb    {id:{p,b}}  今ラウンドの内訳（p=順位賞金 b=ベット収支）
+//   s.rl    {id:n}      直近に終わったラウンドの増減（順位表の「前回戦」）
+//   s.bv    ベット操作の回数（gv を進めない＝制限時間やCPUの手を止めないための番号）
+// すべての変更は applyAction の最後の coinSync を通る（1か所で不変条件を保つ）。
+// =====================================================================
+const COIN_START=1000, STAKES=[50,100,200], SEASON_CHOICES=[0,3,5,10], PRIZE_TOP=500;
+const BET_GAMES=["daifugo","baba"];
+const betGame = s => BET_GAMES.includes(s.game);
+const playingIds = s => (!s.order||!s.finished||!s.losers) ? [] : s.game==="baba" ? bActive(s) : s.game==="daifugo" ? activeOf(s) : [];
+// 順位 r(1始まり)/N人 の賞金
+const prizeOf = (r,N) => N>=2 && r>=1 && r<=N ? Math.round(PRIZE_TOP*(N-r)/(N-1)) : 0;
+// 倍率(10倍の整数)。weight=1/手札枚数 → 確率 → clamp(0.9/p, 1.1, 12) を小数1桁に
+function betOdds(s, nOf){
+  const m=s.bet; if(!m) return {};
+  nOf = nOf || (id => (s.hands[id]||[]).length);
+  const w={}; let tot=0;
+  for(const id of m.cand){ w[id]=1/Math.max(1,nOf(id)); tot+=w[id]; }
+  const o={};
+  for(const id of m.cand){ const p=w[id]/tot, mult=Math.min(12,Math.max(1.1,0.9/p)); o[id]={n:Math.max(0,nOf(id)), p, m:Math.round(mult*10)}; }
+  return o;
+}
+// UI用: クライアントは手札を持っていないので counts から作る
+const betOddsView = s => betOdds(s, id => (s.counts&&s.counts[id]!==undefined) ? s.counts[id] : (s.hands[id]||[]).length);
+const betPay = (stake,m10) => Math.floor(stake*m10/10);
+const myBetOf = (s,id) => s.bet ? s.bet.bets.find(b=>b.id===id)||null : null;
+
+function coinEnsure(s){
+  if(!isObj(s.coins)) s.coins={};
+  if(!isObj(s.sea)) s.sea={len:5,n:0,fin:false,no:1,cer:null};
+  if(!isObj(s.bl)) s.bl={};
+  if(!isObj(s.rb)) s.rb={};
+  if(!isObj(s.rl)) s.rl={};
+  if(!Number.isInteger(s.bk)) s.bk=0;
+  if(!Number.isInteger(s.bv)) s.bv=0;
+  if(s.bet===undefined) s.bet=null;
+  const ids=new Set(s.players.map(p=>p.id));
+  for(const p of s.players) if(!Number.isInteger(s.coins[p.id]) || s.coins[p.id]<0) s.coins[p.id]=COIN_START;
+  for(const m of [s.coins,s.bl,s.rb,s.rl]) for(const k of Object.keys(m)) if(!ids.has(k)) delete m[k];
+  if(s.bet){
+    // 抜けた人の賭けは消える（本人には返さない）。抜けた候補への賭けは返金して候補から外す
+    s.bet.bets=s.bet.bets.filter(b=>ids.has(b.id));
+    const gone=s.bet.cand.filter(id=>!ids.has(id));
+    if(gone.length){
+      for(const b of s.bet.bets.filter(b=>gone.includes(b.on))) betRefund(s,b);
+      s.bet.bets=s.bet.bets.filter(b=>!gone.includes(b.on));
+      s.bet.cand=s.bet.cand.filter(id=>ids.has(id));
+    }
+  }
+}
+function betRefund(s,b){
+  s.coins[b.id]=(s.coins[b.id]||0)+b.stake;
+  s.bl[b.id]={on:b.on,stake:b.stake,m:b.m,r:"x",pay:b.stake};
+}
+function coinRb(s,id){ return s.rb[id]||(s.rb[id]={p:0,b:0}); }
+const betPlaying = s => new Set(s.phase==="play" ? playingIds(s) : []);
+// 賭けられる人: 手札を持っていない（上がった／観戦）・残高50以上
+function betEligible(s,id){
+  if(!s.players.some(p=>p.id===id)) return false;
+  return !betPlaying(s).has(id) && (s.coins[id]||0)>=STAKES[0];
+}
+// マーケットを今の状態に合わせる（上がった人が出たら精算 → 条件が揃えば次を開く）
+function betStep(s){
+  const act=s.phase==="play" ? playingIds(s) : [];
+  const A=new Set(s.phase==="play" ? act : playingIds(s).concat(s.game==="baba"?s.losers:[]));      // 勝負の最中（または今終わった勝負）に残っている人。ババ抜きの最後の負け役も含む
+  let m=s.bet;
+  if(m){
+    const w=s.finished[m.f];
+    if(w!==undefined){ betSettle(s,m,w,A); s.bet=null; }
+    else {
+      // 反則上がり・都落ちなど「上がれずに」抜けた候補: その人への賭けは返金し、候補から外す
+      const gone=m.cand.filter(id=>!A.has(id));
+      if(gone.length){
+        for(const b of m.bets.filter(b=>gone.includes(b.on))) betRefund(s,b);
+        m.bets=m.bets.filter(b=>!gone.includes(b.on)); m.cand=m.cand.filter(id=>A.has(id));
+      }
+      if(m.cand.length<2){ for(const b of m.bets) betRefund(s,b); s.bet=null; }
+    }
+  }
+  if(!s.bet && s.phase==="play" && act.length>=2 && s.players.some(p=>betEligible(s,p.id))){
+    s.bet={k:(s.bk=(s.bk||0)+1), f:s.finished.length, cand:act.slice(), bets:[]};
+    fx(s,"bopen",{q:s.bk, n:act.length});
+  }
+}
+function betSettle(s,m,w,A){
+  const bi=[],bo=[],bs=[],bp=[],bm=[];
+  for(const b of m.bets){
+    let pay, r;
+    if(b.on===w){ pay=betPay(b.stake,b.m); r="w"; s.coins[b.id]=(s.coins[b.id]||0)+pay; coinRb(s,b.id).b+=pay-b.stake; }
+    else if(A.has(b.on)){ pay=0; r="l"; coinRb(s,b.id).b-=b.stake; }
+    else { pay=b.stake; r="x"; s.coins[b.id]=(s.coins[b.id]||0)+b.stake; }
+    s.bl[b.id]={on:b.on,stake:b.stake,m:b.m,r,pay};
+    if(bi.length<12){ bi.push(b.id); bo.push(b.on); bs.push(b.stake); bp.push(r==="x"?-1:pay); bm.push(b.m/10); }
+  }
+  log(s,`🎯 次に上がったのは ${nameOf(s,w)}${m.bets.length?`（賭け ${m.bets.length}件）`:""}`);
+  fx(s,"bset",{w, bi, bo, bs, bp, bm});
+}
+// 最終順位（コイン多い順。同点は直近ラウンドの順位→席順）
+function standingsOf(s){
+  const rk=s.ranking||[];
+  const ix=id=>{ const i=rk.indexOf(id); return i<0?99:i; };
+  const pos=id=>s.players.findIndex(p=>p.id===id);
+  return s.players.map(p=>p.id).sort((a,b)=>(s.coins[b]||0)-(s.coins[a]||0) || ix(a)-ix(b) || pos(a)-pos(b));
+}
+function roundPrize(s){
+  const R=(s.ranking||[]).filter(id=>s.coins[id]!==undefined), N=R.length;
+  const ids=[], ps=[];
+  R.forEach((id,i)=>{ const pz=prizeOf(i+1,N); s.coins[id]+=pz; coinRb(s,id).p=pz; if(ids.length<12){ ids.push(id); ps.push(pz); } });
+  s.rl={}; for(const p of s.players){ const r=s.rb[p.id]; s.rl[p.id]=r?r.p+r.b:0; }
+  fx(s,"prize",{ids, ps});
+  const S=s.sea;
+  if(S.len>0 && S.n>=S.len){
+    S.fin=true; S.cer=standingsOf(s).slice(0,12);
+    log(s,`🏆 ${S.len}回戦おわり！ 総合優勝は ${nameOf(s,S.cer[0])}`);
+    fx(s,"cer",{ids:S.cer.slice(), no:S.no});
+  }
+}
+// ラウンド開始の前: シーズンの切り替え・カウンタ
+function coinPreRound(s){
+  coinEnsure(s);
+  const S=s.sea;
+  if(S.fin){ S.fin=false; S.cer=null; S.n=0; S.no=Math.min(9999,(S.no||1)+1); for(const p of s.players) s.coins[p.id]=COIN_START; s.rl={}; log(s,`🆕 新シーズン開始（コインは${COIN_START}にリセット）`); }
+  S.n=Math.min(9999,S.n+1);
+  s.rb={}; s.bl={}; s.bet=null;
+}
+// 中止（ホストが落ちた等）: 開いている賭けは返金、回戦は数えない
+function coinAbort(s){
+  coinEnsure(s);
+  if(s.bet){ for(const b of s.bet.bets) betRefund(s,b); s.bet=null; }
+  if(s.phase==="play") s.sea.n=Math.max(0,s.sea.n-1);
+  s.rb={}; s.bl={};
+}
+// applyAction の最後に必ず通る。ph0=アクション前の phase
+function coinSync(s, ph0){
+  coinEnsure(s);
+  if(betGame(s) && s.phase==="play") betStep(s);
+  else if(s.bet){
+    if(ph0==="play" && s.phase==="result" && betGame(s)) betStep(s);     // 最後の上がりの精算
+    if(s.bet){ for(const b of s.bet.bets) betRefund(s,b); s.bet=null; }   // 決着しなかった賭けは返金
+  }
+  if(ph0==="play" && s.phase==="result") roundPrize(s);
+}
+// ---- アクション ----
+function betPlace(s, bettor, on, stake){
+  const m=s.bet;
+  if(s.phase!=="play" || !betGame(s) || !m) return "いまは賭けられない";
+  if(typeof on!=="string" || !ID_OK(on) || !m.cand.includes(on)) return "その人には賭けられない";
+  if(!STAKES.includes(stake)) return "賭け金は50/100/200だけ";
+  if(!s.players.some(p=>p.id===bettor) || betPlaying(s).has(bettor)) return "手札があるうちは賭けられない";
+  if(m.bets.some(b=>b.id===bettor)) return "この回はもう賭けた";
+  if((s.coins[bettor]||0)<stake) return "コインが足りない";
+  const o=betOdds(s)[on]; if(!o) return "その人には賭けられない";
+  s.coins[bettor]-=stake;
+  m.bets.push({id:bettor,on,stake,m:o.m});
+  s.bv=(s.bv||0)+1;
+  fx(s,"bet",{id:bettor, on, stake, m:o.m/10});
+  return true;
+}
+// CPUの賭け（人気寄りにランダム・少額）。賭けない時は null
+function cpuBetPick(s,id){
+  if(!s.bet || s.bet.bets.some(b=>b.id===id) || !betEligible(s,id)) return null;
+  const bal=s.coins[id]||0, od=betOdds(s), cand=s.bet.cand.filter(c=>od[c]);
+  if(!cand.length) return null;
+  let stake=Math.random()<.6?50:Math.random()<.75?100:200;
+  const cap=Math.max(50,bal*.4); while(stake>cap && stake>50) stake=stake===200?100:50;
+  if(stake>bal) return null;
+  let r=Math.random()*cand.reduce((a,c)=>a+od[c].p,0), on=cand[cand.length-1];
+  for(const c of cand){ r-=od[c].p; if(r<=0){ on=c; break; } }
+  return {on, stake};
 }
 // =====================================================================
 // ユーティリティ
@@ -1487,7 +1695,7 @@ const anim = (el,kf,opt) => { QG.kick(); try{ return el.animate(kf,opt); }catch(
 // 位置ヘルパ
 function centerOf(el){ const r=el.getBoundingClientRect(); return {x:r.left+r.width/2, y:r.top+r.height/2}; }
 function seatPoint(pid){
-  const el = pid===myId ? document.getElementById("hand") || document.getElementById("mebar") : document.querySelector(`[data-seat="${CSS.escape(pid)}"] .ava`);
+  const el = pid===myId ? document.getElementById("hand") || document.getElementById("betpanel") || document.getElementById("mebar") : document.querySelector(`[data-seat="${CSS.escape(pid)}"] .ava`);
   if(el) return centerOf(el);
   return {x:innerWidth/2, y:pid===myId?innerHeight-80:80};
 }
@@ -2029,6 +2237,7 @@ function explodeHand(ranks, snap0){
 function playFx(e){
   if(e.id && (e.k==="play"||e.k==="uplay")){ seatHop(e.id); setTimeout(fieldPunch,380); }
   if(e.id && (e.k==="pass"||e.k==="upass")) seatHop(e.id,true);
+  if(e.k==="bet"||e.k==="bset"||e.k==="bopen"||e.k==="prize"||e.k==="cer") return playCoinFx(e);
   if(e.k==="bdraw"||e.k==="bshuf") return playBabaFx(e);
   if(e.k==="kflip"||e.k==="kmatch"||e.k==="kmiss") return playShinkeiFx(e);
   if(/^(u|game$)/.test(e.k)) return playUnoFx(e);
@@ -2183,7 +2392,7 @@ function setState(s){ applyState(s); driveBots(); }
 // 新しい状態を反映。ゲーム中にチャットしか変わっていなければ、卓は描き直さない（選択やタップを邪魔しない）
 function applyState(ns){
   const old=S; S=ns;
-  if(old && screen==="room" && old.phase==="play" && ns.phase==="play" && old.gv===ns.gv && old.game===ns.game && document.querySelector(".table")){
+  if(old && screen==="room" && old.phase==="play" && ns.phase==="play" && old.gv===ns.gv && old.bv===ns.bv && old.game===ns.game && document.querySelector(".table")){
     collectChat(); updateChat(); refreshBubbles(); processThrows();
     const cb=document.getElementById("chatBtn"); if(cb) cb.innerHTML="💬"+(unread?`<span class="dot">${unread>9?"9+":unread}</span>`:"");
     return;
@@ -2368,7 +2577,7 @@ const ICE_SERVERS = [
 // アプリのバージョンと通信プロトコル番号。PROTO はホストとクライアントで一致しないと入れない（PWAのキャッシュで古い版が混ざる対策）。
 // 通信の形（メッセージ名・状態の項目）を変えたら PROTO を1つ上げること。APP_VERSION は表示・不具合報告用。
 const APP_VERSION = "2026.11.14-sec1";
-const PROTO = 3;
+const PROTO = 4;
 // 「IPを隠す（リレー接続）」: オンにすると iceTransportPolicy:"relay" で、相手には中継サーバー（TURN）の住所だけが見える
 const relayOn = () => store.get("dfg_relay")==="1";
 function peerCfg(){ const cfg={iceServers:ICE_SERVERS}; if(relayOn()) cfg.iceTransportPolicy="relay"; return cfg; }
@@ -2403,9 +2612,10 @@ function backupPid(){ const p=S && S.players.find(x=>!x.bot && !x.offline && x.i
 // 公平モード：ゲーム中はバックアップ役にも手札を渡さない（ホストが落ちたらそのラウンドは中止してロビーへ）
 function lobbyBackup(s){
   const b=clone(s);
+  coinAbort(b);                                       // 開いている賭けは返金・回戦は数えない（コインは残る）
   Object.assign(b,{phase:"lobby", aborted:true, hands:{}, counts:{}, order:[], turn:null, field:null, passed:[], finished:[], losers:[], ranking:[], titles:{},
     pending:null, pendingQ:[], after:null, xchg:null, u:null, b:null, k:null, rev:false, eb:false, lock:null, stair:false, lastPlayer:null});
-  b.players=b.players.filter(p=>!(p.bot && p.away)); b.players.forEach(p=>{ p.ready=false; delete p.wait; });
+  b.players=b.players.filter(p=>!(p.bot && p.away)); b.players.forEach(p=>{ p.ready=false; delete p.wait; }); coinEnsure(b);
   b.log=["⚠ ホストが落ちたので、このラウンドは中止になった"]; b.fx={n:(s.fx&&s.fx.n)||0,k:[]};
   return b;
 }
@@ -3069,15 +3279,18 @@ let botKick=0;
 setInterval(()=>{   // CPUの手番なのに4秒以上動いていなければ再駆動
   if(!S || S.phase!=="play" || !isHost()) return;
   const cur=S.players.find(p=>p.id===S.turn);
-  if(cur && cur.bot && !xchgOn(S) && lastBotV===S.v && Date.now()-botKick>4000){ lastBotV=-1; driveBots(); }
+  if(cur && cur.bot && !xchgOn(S) && lastBotV===botVer(S) && Date.now()-botKick>4000){ lastBotV=-1; driveBots(); }
 },2000);
+// ベット（bv）は CPU の手を待たせない・やり直させないので、CPU 用の版番号からは引く
+const botVer = s => (s.v||0)-(s.bv||0);
 function driveBots(){
   if(!S || S.phase!=="play" || !isHost()) return;
+  driveCpuBets();
   const cur=S.players.find(p=>p.id===S.turn);
-  if(!cur || !cur.bot || lastBotV===S.v || xchgOn(S)) return;       // カード交換中のCPUは、エンジンが渡し終えている（人間の選択待ちだけ）
-  lastBotV=S.v; botKick=Date.now(); const v=S.v;
+  if(!cur || !cur.bot || lastBotV===botVer(S) || xchgOn(S)) return;       // カード交換中のCPUは、エンジンが渡し終えている（人間の選択待ちだけ）
+  lastBotV=botVer(S); botKick=Date.now(); const v=botVer(S);
   setTimeout(()=>{
-    if(!S || S.v!==v) return;
+    if(!S || botVer(S)!==v) return;
     if(mode==="solo"){ const s=clone(S); if(applyAction(s,myId,{t:"bot"})===true) setState(s); }
     else if(net==="db") mutateDb({t:"bot"}, myId);
     else hostApply(myId,{t:"bot"});
@@ -3215,6 +3428,287 @@ function bindSound(){
   const h=document.getElementById("helpbtn"); if(h) h.onclick=()=>openHelp();
 }
 
+// =====================================================================
+// コイン・ベット・順位表・表彰式の画面（エンジンは 04b。状態は S.coins / S.sea / S.bet / S.bl / S.rb / S.rl）
+//  ・betPanelHtml: 上がった人／観戦者が手札の代わりに見るベットパネル（#betpanel）
+//  ・standingsHtml / coinBreakdownHtml / seasonPanel: ロビー・結果・メニューに出す順位表など
+//  ・playCoinFx: bet / bset / prize / bopen / cer のイベント演出（演出レベル 0 は小さい文字だけ）
+//  ・startCeremony: 全員の画面で出る表彰式（タップでスキップ可）
+//  ・driveCpuBets: CPUの賭け（ホストだけ。ゲーム進行は止めない）
+// 常時アニメーションは無し（動かすのは一度きりの演出だけ）。
+// =====================================================================
+const cfmt = n => String(Math.round(Number(n)||0)).replace(/\B(?=(\d{3})+(?!\d))/g,",");
+const coinOf = id => (S && S.coins && Number.isInteger(S.coins[id])) ? S.coins[id] : COIN_START;
+const betMode = () => !!S && S.phase==="play" && betGame(S) && S.players.some(p=>p.id===myId) && !playingIds(S).includes(myId);
+let betStake=50;
+function seasonTxt(){
+  const E=S&&S.sea; if(!E) return "";
+  const sn=Math.max(1, S.phase==="lobby" ? (E.fin?1:E.n+1) : E.n);
+  return E.len ? `第${sn}回戦 / 全${E.len}回戦` : `第${sn}回戦（表彰なし）`;
+}
+const mecoinHtml = () => S && S.coins ? `<span class="mecoin" data-coin="${coinOf(myId)}">🪙 ${esc(cfmt(coinOf(myId)))}</span>` : "";
+const scoinHtml = id => S && S.coins ? `<span class="scoin" data-coin="${coinOf(id)}">${esc(cfmt(coinOf(id)))}</span>` : "";
+
+// ---- 順位表 ----
+function standingsHtml(){
+  if(!S || !S.coins) return "";
+  const ids=standingsOf(S), E=S.sea;
+  let prev=null, rk=0;
+  const rows=ids.map((id,i)=>{
+    const p=S.players.find(x=>x.id===id); if(!p) return "";
+    const c=S.coins[id]; if(c!==prev){ rk=i+1; prev=c; }
+    const d=(S.rl||{})[id]||0;
+    return `<li class="srow ${id===myId?"me":""} ${p.wait?"wt":""}" data-sid="${esc(id)}" data-c="${c}" data-d="${d}"><span class="sr r${rk}">${rk}</span>${miniAva(p,26)}<b class="sn">${esc(p.name)}</b><span class="sc">${esc(cfmt(c))}</span><span class="sd ${d>0?"up":d<0?"dn":""}">${d?(d>0?"+":"−")+esc(cfmt(Math.abs(d))):"–"}</span></li>`;
+  }).join("");
+  const left = E.len && !E.fin ? Math.max(0,E.len-E.n) : 0;
+  return `<div class="panel standings" id="standings"><div class="row"><b class="grow">🪙 コイン順位</b><span class="note seasonline">${esc(seasonTxt())}</span></div>
+    <div class="sthead"><span>順位</span><span class="grow"></span><span>コイン</span><span>前回戦</span></div>
+    <ol class="slist">${rows}</ol>
+    ${E.fin&&S.phase==="result"?`<div class="note sfin">🏆 全${E.len}回戦おわり！ 総合優勝は <b>${esc(nameOf(S,(E.cer||ids)[0]))}</b></div>`:E.len?`<div class="note">${S.phase==="play"?(left?`この回戦のあと ${left}回戦で表彰式`:"🏆 この回戦が最終回戦！"):`あと${left}回戦で表彰式`}</div>`:`<div class="note">表彰なし（コインはずっとたまるよ）</div>`}</div>`;
+}
+// 今回のコインの内訳（結果画面）
+function coinBreakdownHtml(){
+  if(!S || !S.rb) return "";
+  const rk=S.ranking||[], extra=S.players.map(p=>p.id).filter(id=>!rk.includes(id) && S.rb[id] && (S.rb[id].b||S.rb[id].p));
+  const rows=rk.concat(extra).map(id=>{
+    const p=S.players.find(x=>x.id===id), r=S.rb[id]||{p:0,b:0}; if(!p) return "";
+    const t=r.p+r.b, sg=n=>(n>0?"+":n<0?"−":"±")+cfmt(Math.abs(n));
+    return `<li class="cbrow ${id===myId?"me":""}"><b class="sn">${esc(p.name)}</b><span class="cb1">順位賞金 <i>${esc(sg(r.p))}</i></span>${S.game==="daifugo"||S.game==="baba"?`<span class="cb2">ベット <i class="${r.b>0?"up":r.b<0?"dn":""}">${esc(sg(r.b))}</i></span>`:""}<span class="cbt ${t>0?"up":t<0?"dn":""}">${esc(sg(t))}</span></li>`;
+  }).join("");
+  return `<div class="panel cbreak"><b>🪙 今回のコイン</b><ul class="cblist">${rows}</ul></div>`;
+}
+function seasonPanel(){
+  const host=isHost() && S.phase!=="play", E=S.sea||{len:5};
+  return `<div class="panel seapanel">
+    <div class="row" style="margin-bottom:6px"><b class="grow">🏆 表彰まで</b>${isHost()?"":'<span class="note">ホストが設定</span>'}</div>
+    <div class="seg big" id="seaseg" role="group" aria-label="表彰までの回戦数">${[[0,"なし"],[3,"3回戦"],[5,"5回戦"],[10,"10回戦"]].map(([n,l])=>`<button class="${E.len===n?"on":""}" data-slen="${n}" aria-pressed="${E.len===n}" ${host?"":"disabled"}>${l}</button>`).join("")}</div>
+    <div class="note">${esc(seasonTxt())}。決めた回戦が終わると表彰式。そのあとの「次へ」で新シーズン（コインは${COIN_START}に戻る）。「なし」ならコインがずっとたまるだけ。</div>
+  </div>`;
+}
+
+// ---- ベットパネル（手札があった場所） ----
+function lastBetTxt(l){
+  if(!l) return "";
+  const nm=esc(nameOf(S,l.on)), m=(l.m/10).toFixed(1);
+  if(l.r==="w") return `<span class="w">🎯 的中 +${esc(cfmt(l.pay))}</span> <small>${nm} ×${m}</small>`;
+  if(l.r==="l") return `<span class="l">ハズレ −${esc(cfmt(l.stake))}</span> <small>${nm}</small>`;
+  return `<span class="x">↩ 返金 ${esc(cfmt(l.stake))}</span> <small>${nm}</small>`;
+}
+function betPanelHtml(){
+  const bal=coinOf(myId), M=S.bet, mine=M?myBetOf(S,myId):null, last=(S.bl||{})[myId];
+  const afford=STAKES.filter(x=>x<=bal);
+  if(bal<betStake) betStake=afford.length?afford[afford.length-1]:STAKES[0];
+  const od=M?betOddsView(S):{};
+  let mid="";
+  if(M){
+    const canBet=!mine && bal>=STAKES[0];
+    if(mine) mid=`<div class="bpconf" role="status"><span class="ok">✅</span> <b>${esc(nameOf(S,mine.on))}</b> に <b>${esc(mine.stake)}コイン</b>（×${(mine.m/10).toFixed(1)}）<small>当たれば ${esc(cfmt(betPay(mine.stake,mine.m)))}</small></div>`;
+    else if(!canBet) mid=`<div class="bpnote">コインが${STAKES[0]}未満だから、賭けられないよ</div>`;
+    else mid=`<div class="bpstakes" role="group" aria-label="賭け金"><span class="bpl">賭け金</span>${STAKES.map(x=>`<button type="button" class="${x===betStake?"on":""}" data-stake="${x}" aria-pressed="${x===betStake}" ${x>bal?"disabled":""}>${x}</button>`).join("")}<span class="bpt">タップで賭ける（変更できないよ）</span></div>`;
+    const tiles=M.cand.filter(id=>od[id]).map(id=>{
+      const p=S.players.find(x=>x.id===id)||{id,name:"?"}, o=od[id], chosen=mine&&mine.on===id;
+      return `<button type="button" class="bt ${chosen?"on":""}" data-bet="${esc(id)}" ${canBet?"":"disabled"} aria-label="${esc(p.name)} に賭ける ×${(o.m/10).toFixed(1)}"><span class="bta">${miniAva(p,24)}</span><b>${esc(p.name)}</b><small>${esc(o.n)}枚 <i>×${(o.m/10).toFixed(1)}</i></small></button>`;
+    }).join("");
+    mid+=`<div class="bptiles">${tiles}</div>`;
+  } else {
+    const wait = S.phase==="play" ? (playingIds(S).length>=2 ? "次の賭けを準備中…" : "最後の勝負！賭けはなし") : "";
+    mid=`<div class="bpnote">${last?`前回: ${lastBetTxt(last)}`:"まだ賭けていないよ"}${wait?` · ${wait}`:""}</div>`;
+  }
+  return `<div class="betpanel ${M?"open":""} ${mine?"placed":""}" id="betpanel" data-k="${M?M.k:0}"><div class="bphd"><b>🎯 次に上がるのは誰？</b><span class="bpbal">🪙 <b id="bpbal" data-v="${bal}">${esc(cfmt(bal))}</b></span></div>${mid}</div>`;
+}
+function bindBetPanel(){
+  const P=document.getElementById("betpanel"); if(!P) return;
+  P.querySelectorAll("[data-stake]").forEach(b=>b.onclick=()=>{
+    betStake=+b.dataset.stake; sfx("tap");
+    P.querySelectorAll("[data-stake]").forEach(x=>{ const on=x===b; x.classList.toggle("on",on); x.setAttribute("aria-pressed",on); });
+  });
+  P.querySelectorAll("[data-bet]").forEach(b=>b.onclick=()=>{
+    if(b.disabled) return;
+    P.querySelectorAll("[data-bet]").forEach(x=>x.disabled=true);
+    sfx("tap"); vib(15);
+    Promise.resolve(act({t:"bet",on:b.dataset.bet,stake:betStake})).then(r=>{ if(r!==true) P.querySelectorAll("[data-bet]").forEach(x=>x.disabled=false); }).catch(()=>{});
+    setTimeout(()=>{ if(S && S.bet && !myBetOf(S,myId)) P.querySelectorAll("[data-bet]").forEach(x=>x.disabled=false); },1800);
+  });
+}
+
+// ---- 演出 ----
+function betPoint(id){
+  const el = id===myId ? (document.getElementById("betpanel")||document.getElementById("hand")||document.getElementById("mebar")) : document.querySelector(`[data-seat="${CSS.escape(String(id))}"] .ava`);
+  if(el){ const r=el.getBoundingClientRect(); if(r.width) return {x:r.left+r.width/2, y:r.top+r.height/2}; }
+  return {x:innerWidth/2, y:Math.max(60,SAFE.t+34)};      // 席のない観戦者
+}
+function cfloat(id,text,cls=""){
+  const p=betPoint(id), t=document.createElement("div"); t.className="floattxt cft "+cls; t.textContent=text;
+  t.style.left=p.x+"px"; t.style.top=(p.y-14)+"px"; fxLayer.appendChild(t);
+  anim(t,[{transform:"translate(-50%,0) scale(.6)",opacity:0},{transform:"translate(-50%,-14px) scale(1.05)",opacity:1,offset:.2},{transform:"translate(-50%,-44px) scale(1)",opacity:1,offset:.7},{transform:"translate(-50%,-56px) scale(1)",opacity:0}],{duration:1500,easing:"ease-out",fill:"forwards"});
+  setTimeout(()=>t.remove(),1550);
+}
+function countUp(el,from,to,ms=900){
+  if(!el) return; const t0=performance.now();
+  const f=now=>{ const k=Math.min(1,(now-t0)/ms); el.textContent=cfmt(from+(to-from)*(1-Math.pow(1-k,3))); if(k<1 && el.isConnected) requestAnimationFrame(f); else el.textContent=cfmt(to); };
+  requestAnimationFrame(f);
+}
+function coinFly(a,b,ms=650){
+  const c=document.createElement("div"); c.className="cflyc"; c.textContent="🪙"; fxLayer.appendChild(c);
+  const mx=(a.x+b.x)/2, my=Math.min(a.y,b.y)-60;
+  anim(c,[{transform:`translate(${a.x}px,${a.y}px) translate(-50%,-50%) scale(.6) rotate(0)`,opacity:0},
+          {transform:`translate(${a.x}px,${a.y}px) translate(-50%,-50%) scale(1.2) rotate(90deg)`,opacity:1,offset:.12},
+          {transform:`translate(${mx}px,${my}px) translate(-50%,-50%) scale(1.3) rotate(360deg)`,opacity:1,offset:.55},
+          {transform:`translate(${b.x}px,${b.y}px) translate(-50%,-50%) scale(.8) rotate(720deg)`,opacity:1,offset:.92},
+          {transform:`translate(${b.x}px,${b.y}px) translate(-50%,-50%) scale(.5) rotate(760deg)`,opacity:0}],{duration:ms,easing:"ease-in-out",fill:"forwards"});
+  setTimeout(()=>c.remove(),ms+60);
+}
+const bigBet = (m,pay) => m>=4 || pay>=600;
+function playCoinFx(e){
+  const nm = id => nameOf(S||{players:[]},id);
+  switch(e.k){
+    case "bopen":
+      if(S && betMode() && !myBetOf(S,myId) && coinOf(myId)>=STAKES[0] && fxLevel>=1) sfx("turn");
+      break;
+    case "bet": {
+      const a=betPoint(e.id), b=betPoint(e.on);
+      cfloat(e.id,`🪙 ${e.stake} → ${nm(e.on)}`,"bet");
+      if(fxLevel>=1){ sfx("tap"); coinFly(a,b); setTimeout(()=>{ ring(b.x,b.y,"#ffd54a",90); if(dopa()) burst(b.x,b.y,{n:8,emoji:"🪙",size:6,dist:46,gravity:0}); sfx("pop"); },620); }
+      break; }
+    case "bset": {
+      const ids=e.bi||[];
+      let big=null;
+      ids.forEach((id,i)=>{
+        const pay=e.bp[i], st=e.bs[i], m=e.bm[i], me=id===myId;
+        setTimeout(()=>{
+          if(pay>0){
+            cfloat(id,`🎯 的中 +${cfmt(pay)}`,"win");
+            if(me){
+              const el=document.getElementById("bpbal"), now=coinOf(myId);
+              if(el) countUp(el,Math.max(0,now-pay),now);
+              if(fxLevel>=1){ sfx(bigBet(m,pay)?"fanfare":"win"); vib([40,30,80]); flash("#ffe36a"); }
+              if(dopa()){ kanji("的中","gold",undefined,.28); coinFountain(innerWidth/2,innerHeight*.9,Math.max(12,Math.min(90,Math.round(10+pay/12)))); confetti(Math.min(120,20+Math.round(pay/10))); }
+              else if(fxLevel>=1) banner("的中！ +"+cfmt(pay),"finish",true);
+            }
+            if(bigBet(m,pay) && fxLevel>=1){
+              sfx("fanfare"); cutin("win","🎯 大的中！",`${nm(id)} が ${cfmt(pay)}コイン（×${m.toFixed(1)}）`,1700);
+              if(dopa()){ if(!me){ const p=betPoint(id); coinFountain(p.x,p.y,30); } fireworks(me?6:3); rainbowStrobe(1500); kanji("大的中","rainbow",undefined,.24,300); }
+            }
+          } else if(pay===0){
+            cfloat(id,`ハズレ −${cfmt(st)}`,"lose");
+            if(me){
+              if(dopa()){ kanji("ハズレ","dark",120,.3); darkPulse(); }
+              else if(fxLevel>=1) banner(`ハズレ −${cfmt(st)}`,"round",true);
+              if(fxLevel>=1){ sfx("foul"); vib([60,40,60]); }
+            }
+          } else {
+            cfloat(id,`↩ 返金 +${cfmt(st)}`,"pass");
+            if(me){ const el=document.getElementById("bpbal"), now=coinOf(myId); if(el) countUp(el,Math.max(0,now-st),now,500); }
+          }
+        }, 650+Math.min(i,6)*140);
+      });
+      break; }
+    case "prize": animateStandings(e); break;
+    case "cer": {
+      const d=Math.max(3800, slamUntil-Date.now()+1100);      // いつもの結果演出（王様・最下位のアイコン）のあとで始める
+      setTimeout(()=>startCeremony(e.ids||[]), d);
+      break; }
+  }
+}
+// 結果画面の順位表: コインの数字を前回の値から数え上げて、増えた分の「+n」をポンと出す
+let prizeAnimRound=-1;
+function animateStandings(e){
+  const rows=[...document.querySelectorAll("#standings .srow")];
+  if(!rows.length || prizeAnimRound===S.round*1000+S.sea.no) return;
+  prizeAnimRound=S.round*1000+S.sea.no;
+  if(fxLevel>=1) sfx("finish");
+  rows.forEach((r,i)=>{
+    const c=+r.dataset.c, d=+r.dataset.d, sc=r.querySelector(".sc"), sd=r.querySelector(".sd");
+    if(!d) return;
+    if(fxLevel>=1) setTimeout(()=>{
+      countUp(sc,c-d,c,1000);
+      if(sd) anim(sd,[{transform:"scale(.4)",opacity:0},{transform:"scale(1.5)",opacity:1,offset:.3},{transform:"scale(1)",opacity:1}],{duration:520,easing:"ease-out"});
+      if(d>0 && dopa()){ const q=sd.getBoundingClientRect(); burst(q.left+q.width/2,q.top+q.height/2,{n:6,emoji:"🪙",size:6,dist:50,gravity:30}); }
+    }, 250+i*110);
+    else sc.textContent=cfmt(c);
+  });
+  const mine=rows.find(r=>r.classList.contains("me"));
+  if(mine && dopa() && +mine.dataset.d>0){ const q=mine.getBoundingClientRect(); setTimeout(()=>coinFountain(q.left+q.width/2,q.top+q.height/2,Math.min(50,10+Math.round(+mine.dataset.d/25))),400); }
+}
+
+// ---- 表彰式 ----
+let cer=null;
+const cerAlive = () => !!S && screen==="room" && S.phase!=="play";
+function cerKill(){
+  if(!cer) return;
+  cer.timers.forEach(clearTimeout); document.removeEventListener("keydown",cer.key,true);
+  const el=cer.el; cer=null; el.remove();
+}
+function startCeremony(ids){
+  cerKill();
+  if(!cerAlive() || document.hidden) return;
+  const rows=(Array.isArray(ids)?ids:[]).map(id=>S.players.find(p=>p.id===id)).filter(Boolean);      // 途中で抜けた人は飛ばす（固まらない）
+  if(rows.length<2) return;
+  const N=rows.length, lvl=fxLevel, E=S.sea||{};
+  const el=document.createElement("div"); el.className="cer"; el.id="cer"; el.setAttribute("role","dialog"); el.setAttribute("aria-label","表彰式");
+  el.style.setProperty("--n",N); el.style.setProperty("--h",Math.ceil(N/2));
+  const medal=r=>r===1?"🥇":r===2?"🥈":r===3?"🥉":"";
+  el.innerHTML=`<div class="cerhd"><b>🏆 表彰式</b><small>${E.len?`全${E.len}回戦 総合順位`:"総合順位"}</small></div>
+    <ol class="cerlist">${rows.map((p,i)=>`<li class="cr k${Math.min(i+1,4)}" data-r="${i+1}"><span class="crr">${medal(i+1)||(i+1)}</span>${miniAva(p,34)}<b class="crn">${esc(p.name)}${p.id===myId?" ←":""}</b><span class="crc">${esc(cfmt(S.coins[p.id]||0))}</span></li>`).join("")}</ol>
+    <div class="cerhint">タップでスキップ</div>`;
+  document.body.appendChild(el);
+  const tok={};
+  cer={el, timers:[], tok, key:null};
+  const at=(ms,fn)=>{ const t=setTimeout(()=>{ if(!cer||cer.el!==el) return; if(!cerAlive()){ cerKill(); return; } try{ fn(); }catch(err){ pushErr("ceremony",err); } },ms); cer.timers.push(t); };
+  el.onclick=()=>cerKill();
+  cer.key=ev=>{ if(["Escape","Enter"," "].includes(ev.key)){ ev.preventDefault(); ev.stopPropagation(); cerKill(); } };
+  document.addEventListener("keydown",cer.key,true);
+  requestAnimationFrame(()=>{ if(cer&&cer.el===el) el.classList.add("on"); });
+  const show=r=>{ const li=el.querySelector(`.cr[data-r="${r}"]`); if(li) li.classList.add("show"); };
+  const beat = lvl>=1 ? 1 : .5;
+  let t=900*beat+300;
+  if(lvl>=1){ at(80,()=>{ sfx("deal"); if(dopa()) kanji("表彰式","gold",110,.2); }); }
+  // 最下位から3位まで: ひとりずつ短い間をあけて
+  for(let r=N;r>=3;r--){
+    const last=r===N, rr=r;
+    at(t,()=>{ show(rr); sfx(last?"foul":"tick"); if(last && lvl>=1) avaSlam(rows[N-1].id,"bad","最下位…",rows[N-1].name); });
+    t += last && lvl>=1 ? 3000 : (r>3 ? 650 : 900)*beat;
+  }
+  if(N>=2){   // 2位
+    at(t,()=>{ show(2); sfx("thud"); if(lvl>=1){ flash("#e8f0ff"); shake(); } if(N===2 && lvl>=1) avaSlam(rows[1].id,"bad","最下位…",rows[1].name); });
+    t += (N===2 && lvl>=1) ? 3000 : 1500*beat;
+  }
+  at(t,()=>{   // 優勝
+    show(1); const c=rows[0];
+    sfx("fanfare");
+    if(lvl>=1){ avaSlam(c.id,"king","総合優勝",c.name); flash("#fff4b0"); rays(); fireworks(12); confetti(180); vib([80,40,200]);
+      coinFountain(innerWidth*.2,innerHeight*.95,60); coinFountain(innerWidth*.5,innerHeight*.95,90); coinFountain(innerWidth*.8,innerHeight*.95,60); }
+    if(dopa()){ kanji("総合優勝","rainbow",undefined,.2,300); setTimeout(()=>kanji("優勝","gold",150,.34),1100); rainbowStrobe(2600); rgbSplit(500); hitStop(2); rain(["👑","🪙","💰","✨","🌈"],80,3200); }
+    el.classList.add("fin");
+  });
+  at(t+(lvl>=1?9000:3500),()=>cerKill());
+  at(60000,()=>cerKill());
+}
+function replayCeremony(){ if(S && S.sea && S.sea.cer) startCeremony(S.sea.cer); }
+
+// ---- CPUの賭け（ホストだけ）。ゲームの進行は待たない（別タイマー） ----
+const cpuBetT=new Set();
+function driveCpuBets(){
+  if(!S || S.phase!=="play" || !S.bet || !isHost()) return;
+  for(const p of S.players){
+    if(!p.bot || p.away || !betEligible(S,p.id) || S.bet.bets.some(b=>b.id===p.id)) continue;
+    const key=S.round+"|"+S.bet.k+"|"+p.id; if(cpuBetT.has(key)) continue;
+    cpuBetT.add(key); if(cpuBetT.size>150){ cpuBetT.clear(); cpuBetT.add(key); }
+    if(Math.random()<.3) continue;                                  // 全員が毎回賭けるわけではない
+    const k=S.bet.k, rd=S.round, id=p.id;
+    setTimeout(()=>cpuBetNow(id,k,rd), 1500+Math.random()*6500);
+  }
+}
+function cpuBetNow(id,k,rd){
+  try{
+    if(!S || !isHost() || S.phase!=="play" || !S.bet || S.bet.k!==k || S.round!==rd) return;
+    const pick=cpuBetPick(S,id); if(!pick) return;
+    const a={t:"cbet",id,on:pick.on,stake:pick.stake};
+    if(mode==="solo"){ const s=clone(S); if(applyAction(s,myId,a)===true) setState(s); }
+    else if(net==="db") mutateDb(a,myId);
+    else hostApply(myId,a);
+  }catch(err){ pushErr("cpubet",err); }
+}
 let hashKeep="";
 function renderEntry(){
   document.body.classList.remove("revmode","ebmode","lockmode");
@@ -3336,6 +3830,7 @@ function bindChips(){
   const fr=document.getElementById("fairbtn"); if(fr) fr.onclick=()=>{ act({t:"fair",v:S.fair===false}); sfx("tap"); };
   const pb=document.getElementById("pubbtn"); if(pb) pb.onclick=()=>{ act({t:"pub",v:!S.pub}); sfx("tap"); setTimeout(()=>dirTick(true),50); };
   const rt=document.getElementById("rtitle"); if(rt && isHost()) rt.onchange=()=>{ act({t:"pub",v:true,title:rt.value}); setTimeout(()=>dirTick(true),50); };
+  app.querySelectorAll("[data-slen]").forEach(b=>b.onclick=()=>{ if(isHost() && S.phase!=="play"){ act({t:"season",len:+b.dataset.slen}); sfx("tap"); } });
   app.querySelectorAll("[data-tsec]").forEach(b=>b.onclick=()=>{ if(isHost()){ act({t:"timer",sec:+b.dataset.tsec}); sfx("tap"); } });
   app.querySelectorAll("[data-avchg]").forEach(b=>b.onclick=()=>pickAvatar());
 }
@@ -3395,7 +3890,7 @@ function startControls(isNext){
   const humans=S.players.filter(p=>!p.bot && p.id!==S.host);
   const readyN=humans.filter(p=>p.ready).length, allReady=readyN===humans.length;
   if(host){
-    const label = isNext ? "次のラウンドへ" : `ゲーム開始（${n}人）`;
+    const label = isNext ? (S.sea&&S.sea.fin ? "🆕 新シーズンを始める" : "次のラウンドへ") : `ゲーム開始（${n}人）`;
     return `<div class="btnrow"><button class="ghost" id="addbot" ${n>=MAX_PLAYERS?"disabled":""}>＋ CPU</button>
       <button id="start" ${n<2||!allReady?"disabled":""}>${allReady?label:`準備待ち ${readyN}/${humans.length}`}</button></div>
       ${!allReady&&n>=2?`<div style="text-align:right;margin-top:6px"><button class="small ghost" id="force">待たずに開始</button></div>`:""}`;
@@ -3420,6 +3915,8 @@ function renderLobby(){
     <div class="sub">合言葉 <span class="code">${esc(roomKey)}</span> ${inviteBtn()}</div>
     <div class="panel"><div class="note" style="margin-bottom:6px">${S.players.length}/${MAX_PLAYERS}人${readySummary()}</div>${playerChips()}${startControls(false)}</div>
     ${timerPanel()}
+    ${seasonPanel()}
+    ${standingsHtml()}
     ${gamePanel()}
     ${mode==="online"?chatPreview():""}
     ${rulesPanel()}
@@ -3456,7 +3953,7 @@ function unoSeatHtml(p,x,y,small){
   return `<div data-seat="${esc(p.id)}" class="seat ${small?(S.order.length>=9?"xs":"sm"):""} ${talk?"talk":""} ${S.turn===p.id?"turn":""} ${cnt===1?"unoone":""}" style="left:${x}%;top:${y}%">
     ${bubbleHtml(p.id)}
     <div class="plate">${p.away?"💤":""}${esc(p.name)}</div>
-    <div class="avawrap"><div class="fan">${backs}</div>${avatar(p)}</div>
+    <div class="avawrap"><div class="fan">${backs}</div>${avatar(p)}${scoinHtml(p.id)}</div>
     ${stat}${tobot}</div>`;
 }
 // 自分の操作の状態
@@ -3522,7 +4019,7 @@ function renderUno(){
       ${bubbleHtml(myId)}${firstHint("uno")}
       <div class="meinfo">
         <div class="row" style="gap:5px;flex-wrap:nowrap">${miniAva(meP,34)}<div class="plate" style="${myMoment?"background:linear-gradient(#ffe08a,#f5b52e);color:#3a2600":""}">${esc(meP.name)}</div></div>
-        <span class="sstat ${hand.length===1?"unoleft":""}">${hand.length}枚${(U.called||{})[myId]?" · UNO宣言済":""}</span>
+        <span class="sstat ${hand.length===1?"unoleft":""}">${hand.length}枚${(U.called||{})[myId]?" · UNO宣言済":""}</span>${mecoinHtml()}
       </div>
       <div class="mebtns">
         ${sevenPick}
@@ -3536,7 +4033,7 @@ function renderUno(){
     </div>
     ${myMoment?`<div class="ribbon" id="ribbon">${U.pending?"▶ 選んでね":"▶ あなたの番"}</div>`:""}
     <div class="hand ${myMoment?"myturn":""}" id="hand" style="height:${HG.height}px">${hand.map((c,i)=>unoCardEl(c,(unoSel===c?"sel ":"")+(C.dim&&!C.dim.has(c)?"dim ":"")+(newRound?"deal":""),`--cw:${HG.cw}px;z-index:${HG.pos[i].z};transform:${handTf(HG.pos[i],unoSel===c?24:0)};${newRound?`animation-delay:${i*40}ms`:""}`)).join("")}</div>`
-    :`<div class="mebar" style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次の回戦から参加）":""}</div></div>`}
+    :`<div class="mebar" style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次の回戦から参加）":""} ${S.coins?`<span class="cn">🪙 ${esc(cfmt(coinOf(myId)))}</span>`:""}</div></div>`}
   </div>
   ${wildPick?`<div class="wildpick" id="wildpick"><div class="inner"><b>色を選んでね</b><div class="wg">${UNO_COLORS.map(c=>`<button class="c-${c}" data-wc="${c}">${UNO_COLOR_NAME[c]}</button>`).join("")}</div><button class="ghost small" id="wcancel">やめる</button></div></div>`:""}
   ${menuOpen?menuHtml():""}`;
@@ -3610,7 +4107,7 @@ function genSeatHtml(p,x,y,small,stat,cls="",backs=true){
   return `<div data-seat="${esc(p.id)}" class="seat ${small?(S.order.length>=9?"xs":"sm"):""} ${talk?"talk":""} ${S.turn===p.id?"turn":""} ${cls}" style="left:${x}%;top:${y}%">
     ${bubbleHtml(p.id)}
     <div class="plate">${p.away?"💤":""}${esc(p.name)}</div>
-    <div class="avawrap"><div class="fan">${fan}</div>${avatar(p)}${title?`<span class="title ${["一抜け","記憶王"].includes(title)?"gold":""}">${esc(title)}</span>`:""}</div>
+    <div class="avawrap"><div class="fan">${fan}</div>${avatar(p)}${title?`<span class="title ${["一抜け","記憶王"].includes(title)?"gold":""}">${esc(title)}</span>`:""}${scoinHtml(p.id)}</div>
     ${stat}${tobot}</div>`;
 }
 function othersOf(){ const ord=S.order, mi=ord.indexOf(myId); return mi>=0 ? ord.slice(mi+1).concat(ord.slice(0,mi)) : ord.slice(); }
@@ -3657,6 +4154,7 @@ function renderBaba(){
   const HG=handGeom(hand.length, tableW());
   const aimedI = B.hover && B.hover.to===myId ? B.hover.i : -1;
   const myMoment = myTurn;
+  const bm = betMode();
   app.innerHTML=`
   <div class="table baba ${myMoment?"myturn":""}">
     ${tableTop("",myMoment,`ババ抜き 第${esc(S.round)}回戦`)}
@@ -3667,11 +4165,11 @@ function renderBaba(){
       <div class="bpile">🗑 捨てたペア <b>${esc(pairs)}</b>組</div>
     </div>
     ${amIn?`
-    <div class="mebar" id="mebar">
-      ${bubbleHtml(myId)}${firstHint("baba")}
+    <div class="mebar ${bm?"bmode":""}" id="mebar">
+      ${bubbleHtml(myId)}${bm?"":firstHint("baba")}
       <div class="meinfo">
         <div class="row" style="gap:5px;flex-wrap:nowrap">${miniAva(meP,34)}<div class="plate" style="${myMoment?"background:linear-gradient(#ffe08a,#f5b52e);color:#3a2600":""}">${esc(meP.name)}</div></div>
-        <span class="sstat">${meOut?(S.finished.includes(myId)?`${S.finished.indexOf(myId)+1}位 上がり`:"ババ持ち"):`${hand.length}枚`}</span>
+        <span class="sstat">${meOut?(S.finished.includes(myId)?`${S.finished.indexOf(myId)+1}位 上がり`:"ババ持ち"):`${hand.length}枚`}</span>${mecoinHtml()}
       </div>
       <div class="mebtns">
         <div class="hint" id="hint" aria-live="polite">${meOut?"上がり！観戦中":myTurn?(B.hover&&B.hover.by===myId?"もう1回タップか「引く」で決定":"カードをタップして選ぶ（相手にも見えるよ）"):aimedI>=0?"👆 光ってるカードが狙われてる…シャッフルで逃げろ":`${esc(nameOf(S,S.turn))} の番…`}</div>
@@ -3682,8 +4180,8 @@ function renderBaba(){
       </div>
     </div>
     ${myMoment?`<div class="ribbon" id="ribbon">▶ あなたの番</div>`:""}
-    <div class="hand ${myMoment?"myturn":""}" id="hand" style="height:${HG.height}px">${hand.map((c,i)=>cardEl(c,(i===aimedI?"aimed ":"")+(newRound?"deal":""),`--cw:${HG.cw}px;z-index:${HG.pos[i].z};transform:${handTf(HG.pos[i],i===aimedI?20:0)};${newRound?`animation-delay:${i*40}ms`:""}`)).join("")}</div>`
-    :`<div class="mebar" style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次の回戦から参加）":""}</div></div>`}
+    ${bm?betPanelHtml():`<div class="hand ${myMoment?"myturn":""}" id="hand" style="height:${HG.height}px">${hand.map((c,i)=>cardEl(c,(i===aimedI?"aimed ":"")+(newRound?"deal":""),`--cw:${HG.cw}px;z-index:${HG.pos[i].z};transform:${handTf(HG.pos[i],i===aimedI?20:0)};${newRound?`animation-delay:${i*40}ms`:""}`)).join("")}</div>`}`
+    :`<div class="mebar ${bm?"specbar":""}" ${bm?'id="mebar"':""} style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次の回戦から参加）":""} ${S.coins?`<span class="cn">🪙 ${esc(cfmt(coinOf(myId)))}</span>`:""}</div></div>${bm?betPanelHtml():""}`}
   </div>
   ${menuOpen?menuHtml():""}`;
   layoutHand(); placeBar();
@@ -3691,6 +4189,7 @@ function renderBaba(){
   const hs = aimedI>=0 ? S.v+":"+aimedI : ""; if(aimedI>=0 && hs.split(":")[1]!==lastHoverSig.split(":")[1]){ sfx("tap"); vib(15); } lastHoverSig=hs;
   if(turnStart) setTimeout(myTurnFx, 60);
   bindChips(); bindSound(); bindMenu(); bindChatBtn();
+  if(bm) bindBetPanel();
   if(!amIn) return;
   const fan=document.getElementById("bfan");
   if(fan && myTurn) fan.onclick=e=>{
@@ -3756,9 +4255,9 @@ function renderShinkei(){
   if(kPrevRound!==S.round){ kPrevVis=new Set(); kPrevRound=S.round; }
   const strip = S.order.map(id=>{ const p=S.players.find(x=>x.id===id); if(!p) return "";
     const talk = bubbles[id] && Date.now()-bubbles[id].at<4500;
-    return `<div data-seat="${esc(id)}" class="kchip ${S.turn===id?"turn":""} ${id===myId?"me":""} ${talk?"talk":""}">${bubbleHtml(id)}${avatar(p)}<div class="kn">${p.away?"💤":""}${esc(p.name)}</div><div class="ks"><b>${esc(K.scores[id]||0)}</b>組</div></div>`; }).join("");
+    return `<div data-seat="${esc(id)}" class="kchip ${S.turn===id?"turn":""} ${id===myId?"me":""} ${talk?"talk":""}">${bubbleHtml(id)}${avatar(p)}<div class="kn">${p.away?"💤":""}${esc(p.name)}</div><div class="ks"><b>${esc(K.scores[id]||0)}</b>組</div>${S.coins?`<div class="kc">🪙${esc(cfmt(coinOf(id)))}</div>`:""}</div>`; }).join("");
   const W=Math.min(isLand()?tableW():(app.clientWidth||innerWidth), isWide()?1500:600)-20;
-  const hintX = !isLand() && amIn && firstHint("shinkei") ? 34 : 0;   // 初回ヒント行ぶん、盤の下端と「あなたの番」リボンを上げる
+  const hintX = !isLand() && amIn && firstHint("shinkei") ? 36 : 0;   // 初回ヒント行ぶん、盤の下端と「あなたの番」リボンを上げる
   const top = SAFE.t + (isLand()?112:isWide()?178:162), bottom = SAFE.b + (isLand()?8:isWide()?110:96) + hintX;
   const H=innerHeight-top-bottom;
   const G=kGrid(K.board.length, W, H);
@@ -3783,12 +4282,12 @@ function renderShinkei(){
       ${bubbleHtml(myId)}${firstHint("shinkei")}
       <div class="meinfo">
         <div class="row" style="gap:5px;flex-wrap:nowrap">${miniAva(meP,34)}<div class="plate" style="${myMoment?"background:linear-gradient(#ffe08a,#f5b52e);color:#3a2600":""}">${esc(meP.name)}</div></div>
-        <span class="sstat">${esc(K.scores[myId]||0)}組 · 残り${(total-left)/2}組</span>
+        <span class="sstat">${esc(K.scores[myId]||0)}組 · 残り${(total-left)/2}組</span>${mecoinHtml()}
       </div>
       <div class="mebtns"><div class="hint" id="hint" aria-live="polite">${myTurn?(K.up.length?"もう1枚めくって！":(K.combo?`🔥 ${K.combo}連続！もう1回`:"2枚めくってね")):`${esc(nameOf(S,S.turn))} の番…`}</div></div>
     </div>
     ${myMoment&&!isLand()?`<div class="ribbon" id="ribbon" style="bottom:${bottom-14}px">▶ あなたの番</div>`:""}`
-    :`<div class="mebar" style="bottom:20px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中</div></div>`}
+    :`<div class="mebar" style="bottom:20px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中 ${S.coins?`<span class="cn">🪙 ${esc(cfmt(coinOf(myId)))}</span>`:""}</div></div>`}
   </div>
   ${menuOpen?menuHtml():""}`;
   if(turnStart){ sfx("turn"); vib([30,40,30]); banner("あなたの番！","myturn",false,true); }
@@ -3918,6 +4417,7 @@ function yokokuFor(list){
     else if(e.k==="udraw" && e.total>=4) lv=Math.max(lv,e.total>=8?4:2);
     else if(e.k==="uno") lv=Math.max(lv,1);
     else if(e.k==="kmatch" && e.combo>=2) lv=Math.max(lv,e.combo>=3?3:1);
+    else if(e.k==="bset" && (e.bi||[]).some((id,i)=>e.bp[i]>0 && bigBet(e.bm[i],e.bp[i]))) lv=Math.max(lv,3);
     else if(e.k==="bdraw" && e.priv && parse(e.priv.card).r===16) lv=Math.max(lv,3);
   }
   if(lv<0){
@@ -4023,6 +4523,15 @@ const HELP={
   baba:{t:"🤡 ババ抜き", basics:["配られた時点で同じ数字のペアは自動で捨てる。","自分の番は、前の人の手札（裏向き）から1枚引く。ペアができたら捨てる。","手札がなくなったら上がり。最後にジョーカー（ババ）を持ってた人の負け。引かれそうなときは「シャッフル」で逃げよう。"]},
   shinkei:{t:"🧠 神経衰弱", basics:["裏向きのカードを2枚めくって、同じ数字ならゲットしてもう1回。","外れたら次の人へ。覚えてるカードが勝負だよ。","全部なくなったときに、一番たくさん取った人の勝ち。5人以上だとジョーカー2枚も入る（ジョーカー同士でペア）。"]},
 };
+function coinHelp(g){
+  const base=["みんな最初は1000コイン。ゲームが終わるたびに順位賞金がもらえる（1位が500、最下位は0。間の順位は人数に合わせて割り算）。コインは次の回戦やほかのゲームにも持ち越しだよ。",
+    "ロビーの「表彰まで」で3・5・10回戦を選ぶと、その回数が終わったときに表彰式。いちばんコインが多い人が総合優勝。そのあと「次へ」で新シーズン（コインは1000に戻る）。「なし」ならコインがずっとたまるだけ。"];
+  const bet=g==="daifugo"||g==="baba" ? ["先に上がった人や観戦中の人は、手札のかわりに「次に上がるのは誰？」ベットができる。賭け金は50・100・200から選んで、上がると思う人をタップ。",
+    "倍率は賭けた瞬間の手札の枚数で決まる（少ない人ほど低い倍率、遅れてる人ほど高い倍率）。当たると賭け金×倍率（小数は切り捨て）がもらえて、ハズレなら賭け金を失う。いちど賭けたら変更できないよ。",
+    "手札が残ってるうちは賭けられない。次の人が上がったらすぐ精算されて、まだ2人以上残ってるなら次の賭けが始まる。反則上がり・都落ちになった人は「上がり」じゃないから、その人への賭けは返金。ゲームは待たないよ。"]
+    : ["このゲームにベットはないよ（大富豪とババ抜きだけ）。順位賞金でコインをためよう。"];
+  return base.concat(bet);
+}
 function helpHtml(g){
   const H=HELP[g]||HELP.daifugo;
   let rules="";
@@ -4047,6 +4556,7 @@ function helpHtml(g){
     <div class="row"><b class="grow" id="helptit">❓ 遊び方　${esc(H.t)}</b><button class="small ghost" type="button" data-close="help" data-fid="x">閉じる</button></div>
     <h4>基本</h4><ul class="hl">${H.basics.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>
     ${rules}
+    <h4>🪙 コインとベット</h4><ul class="hl">${coinHelp(g).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>
     <h4>操作（スマホ）</h4><ul class="hl">${touch.map(x=>`<li>${esc(x)}</li>`).join("")}<li>他の人のアイコンをタップすると、スタンプや物を投げてリアクションできるよ。</li></ul>
     <h4>操作（PC のキーボード）</h4><dl class="kl">${keys.map(([k,d])=>`<dt><kbd>${esc(k)}</kbd></dt><dd>${esc(d)}</dd>`).join("")}</dl>
     <div class="note">マウスでも、カードをクリックするだけで同じことができるよ。</div>
@@ -4397,7 +4907,7 @@ function seatHtml(p,x,y,small){
   return `<div data-seat="${esc(p.id)}" class="seat ${small?(S.order.length>=9?"xs":"sm"):""} ${talk?"talk":""} ${S.turn===p.id&&!xchgOn(S)?"turn":""} ${fin>=0||lost?"out":""}" style="left:${x}%;top:${y}%">
     ${bubbleHtml(p.id)}
     <div class="plate">${p.away?"💤":""}${esc(p.name)}</div>
-    <div class="avawrap"><div class="fan">${backs}</div>${avatar(p)}${title?`<span class="title ${title==="大富豪"?"gold":""}">${esc(title)}</span>`:""}</div>
+    <div class="avawrap"><div class="fan">${backs}</div>${avatar(p)}${title?`<span class="title ${title==="大富豪"?"gold":""}">${esc(title)}</span>`:""}${scoinHtml(p.id)}</div>
     ${stat}${tobot}</div>`;
 }
 
@@ -4439,13 +4949,13 @@ window.addEventListener("resize", ()=>{ applyWide(); layoutHand(); placeBar(); }
 window.addEventListener("orientationchange", ()=>setTimeout(()=>{ applyWide(); layoutHand(); placeBar(); },120));
 // 操作バーと「あなたの番」リボンを手札の上に置く。読み(offsetHeight)を先にまとめてから書く＝強制レイアウトを1回で済ませる
 function placeBar(){
-  const hand=document.getElementById("hand"), bar=document.getElementById("mebar"), rb=document.getElementById("ribbon");
+  const hand=document.getElementById("hand")||document.getElementById("betpanel"), bar=document.getElementById("mebar"), rb=document.getElementById("ribbon");
   if(!bar || !hand) return;                    // 神経衰弱の操作バーは別配置（手札なし）
   if(isLand()){                                // 横画面: 操作バーは右の列（CSS）。リボンはその真上
     bar.style.bottom=""; if(rb) rb.style.bottom=(bar.offsetHeight+SAFE.b+12)+"px"; return;
   }
   const hh=hand.offsetHeight, bh=rb?bar.offsetHeight:0;
-  bar.style.bottom=(hh+SAFE.b+4)+"px";
+  bar.style.bottom=(hand.id==="betpanel" ? (parseFloat(getComputedStyle(hand).bottom)||0)+hh+6 : hh+SAFE.b+4)+"px";
   if(rb) rb.style.bottom=(hh+SAFE.b+4+bh+4)+"px";
   fitField();
   // 登場アニメ中は席やリボンの矩形が動いているので、落ち着いてからもう一度だけ合わせ直す
@@ -4543,6 +5053,7 @@ function renderGame(){
   const fieldTop = isLand() ? (SAFE.t+118)/innerHeight*100 : isWide() ? 40 : others.length>5 ? 50 : others.length>=4 ? 47 : 42;
   const watchers = S.players.filter(p=>!S.order.includes(p.id));
   const HG = handGeom(myHand.length, tableW());
+  const bm = betMode();
   const bombPicker = C.kind==="bomb" ? `<div class="bombpick">${[3,4,5,6,7,8,9,10,11,12,13,14,15,16].map(r=>`<button class="${bombSel.has(r)?"on":""}" data-rank="${r}">${r===16?"🃏":RANK_LABEL(r)}</button>`).join("")}</div>` : "";
   app.innerHTML=`
   <div class="table ${myMoment?"myturn":""}">
@@ -4559,11 +5070,11 @@ function renderGame(){
          :`<div class="fieldby" style="opacity:.6">場は空っぽ</div>`}
     </div>
     ${amIn?`
-    <div class="mebar" id="mebar">
-      ${bubbleHtml(myId)}${firstHint("daifugo")}
+    <div class="mebar ${bm?"bmode":""}" id="mebar">
+      ${bubbleHtml(myId)}${bm?"":firstHint("daifugo")}
       <div class="meinfo">
         <div class="row" style="gap:5px;flex-wrap:nowrap">${miniAva(meP,34)}<div class="plate" style="${myMoment?"background:linear-gradient(#ffe08a,#f5b52e);color:#3a2600":""}">${esc(meP.name)}${myTitle?` · ${esc(myTitle)}`:""}</div></div>
-        <span class="sstat ${fin>=0?"win":lost?"lose":""}">${fin>=0?`${fin+1}位 上がり！`:lost?"最下位…":`${myHand.length}枚`}</span>
+        <span class="sstat ${fin>=0?"win":lost?"lose":""}">${fin>=0?`${fin+1}位 上がり！`:lost?"最下位…":`${myHand.length}枚`}</span>${mecoinHtml()}
       </div>
       <div class="mebtns">
         ${bombPicker}
@@ -4572,14 +5083,15 @@ function renderGame(){
       </div>
     </div>
     ${myMoment?`<div class="ribbon" id="ribbon">${xon?"▶ 渡すカードを選んでね":S.pending?"▶ 選んでね":"▶ あなたの番"}</div>`:""}
-    <div class="hand ${myMoment?"myturn":""}" id="hand" style="height:${HG.height}px">${myHand.map((c,i)=>cardEl(c,(sel.has(c)?"sel ":"")+(C.dim&&!C.dim.has(c)?"dim ":"")+(gotSet.has(c)?"got ":"")+(newRound?"deal":""),`--cw:${HG.cw}px;z-index:${HG.pos[i].z};transform:${handTf(HG.pos[i],sel.has(c)?24:0)};${newRound?`animation-delay:${i*40}ms`:""}`)).join("")}</div>`
-    :`<div class="mebar" style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次のラウンドから参加）":""}</div></div>`}
+    ${bm?betPanelHtml():`<div class="hand ${myMoment?"myturn":""}" id="hand" style="height:${HG.height}px">${myHand.map((c,i)=>cardEl(c,(sel.has(c)?"sel ":"")+(C.dim&&!C.dim.has(c)?"dim ":"")+(gotSet.has(c)?"got ":"")+(newRound?"deal":""),`--cw:${HG.cw}px;z-index:${HG.pos[i].z};transform:${handTf(HG.pos[i],sel.has(c)?24:0)};${newRound?`animation-delay:${i*40}ms`:""}`)).join("")}</div>`}`
+    :`<div class="mebar ${bm?"specbar":""}" ${bm?'id="mebar"':""} style="bottom:30px;justify-content:center"><div class="sstat" style="font-size:13px;padding:6px 14px">👀 観戦中${meP&&meP.wait?"（次のラウンドから参加）":""} ${scoinHtml(myId)?`<span class="cn">🪙 ${esc(cfmt(coinOf(myId)))}</span>`:""}</div></div>${bm?betPanelHtml():""}`}
   </div>
   ${menuOpen?menuHtml():""}`;
   layoutHand(); placeBar();
   if(turnStart) setTimeout(myTurnFx, 60);
   bindChips(); bindSound(); bindMenu(); bindChatBtn();
-  if(!amIn) return;
+  if(bm) bindBetPanel();
+  if(!amIn || bm) return;
   const hand=document.getElementById("hand");
   // 選択まわり。1回タップ=その1枚、素早く2回タップ=同じ数字で出せるカードをまとめて選ぶ（もう1回2連打で解除）、見た目で一番上のカードを拾う
   const syncSel=()=>{
@@ -4636,6 +5148,7 @@ function menuHtml(){
     <div class="note" style="margin:10px 0">合言葉: <b>${esc(roomKey)}</b> ${inviteBtn()}</div>
     <div class="row" style="margin:8px 0"><button class="small" id="menuset">⚙ 設定</button><button class="small" id="menuhelp">❓ 遊び方</button></div>
     <div class="note"><b>このルール:</b> ${on.join(" / ")}</div>
+    ${standingsHtml()}
     ${isHost() && mode==="online" ? `<div class="note" style="margin-top:8px"><b>ホスト操作</b></div>
       <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px"><button class="small ${S.locked?"":"ghost"}" id="lockbtn">${S.locked?"🔒 鍵かかってる（開ける）":"🔓 部屋に鍵をかける"}</button></div>
       ${S.players.filter(p=>!p.bot && p.id!==myId).map(p=>`<div class="row" style="margin-top:4px"><span class="grow note">${esc(p.name)}</span><button class="small ghost danger" data-kick="${esc(p.id)}">追い出す</button></div>`).join("")}` : ""}
@@ -4662,8 +5175,12 @@ function renderResult(){
     <div class="sub">合言葉 <span class="code" style="font-size:15px">${esc(roomKey)}</span> ${inviteBtn()}</div>
     <div class="panel"><ol class="rank">${S.ranking.map(id=>`<li>${miniAva(S.players.find(p=>p.id===id)||{id,name:"?"},30)}<b>${esc(nameOf(S,id))}</b> <span class="badge ${["大富豪","UNO王","一抜け","記憶王"].includes(S.titles[id])?"gold":["大貧民","ババ持ち"].includes(S.titles[id])?"bad":""}">${esc(S.titles[id]||"")}</span>${S.game==="uno"&&S.u&&S.u.scores?`<span class="pts">${S.u.scores[id]??0}点</span>`:""}${S.game==="shinkei"&&S.k?`<span class="pts">${S.k.scores[id]??0}組</span>`:""}${id===myId?" ← あなた":""}</li>`).join("")}</ol>
       ${S.game==="uno"?`<div class="note">残った手札の点数が少ない順（数字=その数、記号=20、ワイルド=50）</div>`:""}</div>
+    ${coinBreakdownHtml()}
+    ${standingsHtml()}
+    ${S.sea&&S.sea.fin&&S.sea.cer?`<div class="btnrow"><button class="ghost" id="cerreplay">🏆 表彰式をもう一度見る</button></div>`:""}
     <div class="panel">${playerChips()}${startControls(true)}</div>
     ${timerPanel()}
+    ${seasonPanel()}
     ${gamePanel()}
     ${mode==="online"?chatPreview():""}
     ${rulesPanel()}
@@ -4671,6 +5188,7 @@ function renderResult(){
     <button class="ghost" id="leave">退出</button></div>`;
   bindChips(); bindRules(); bindSound(); bindInvite(); bindStart(true); bindChatBtn();
   document.getElementById("leave").onclick=leave;
+  const cr=document.getElementById("cerreplay"); if(cr) cr.onclick=()=>replayCeremony();
 }
 
 render();

@@ -40,6 +40,7 @@ function explodeHand(ranks, snap0){
 function playFx(e){
   if(e.id && (e.k==="play"||e.k==="uplay")){ seatHop(e.id); setTimeout(fieldPunch,380); }
   if(e.id && (e.k==="pass"||e.k==="upass")) seatHop(e.id,true);
+  if(e.k==="bet"||e.k==="bset"||e.k==="bopen"||e.k==="prize"||e.k==="cer") return playCoinFx(e);
   if(e.k==="bdraw"||e.k==="bshuf") return playBabaFx(e);
   if(e.k==="kflip"||e.k==="kmatch"||e.k==="kmiss") return playShinkeiFx(e);
   if(/^(u|game$)/.test(e.k)) return playUnoFx(e);
@@ -76,6 +77,22 @@ function playFx(e){
       if(dopa()){ kanji("爆","red",190,.27); hitStop(2); rgbSplit(700); setTimeout(()=>shockwave("#fff"),250); setTimeout(()=>shake(true),500); rain(["💥","🔥","💨"],30,2000); }
       setTimeout(()=>{ const sm=document.createElement("div"); sm.className="smoke"; fxLayer.appendChild(sm); setTimeout(()=>sm.remove(),1600); },200);
       cutin("bomb", "💣 12ボンバー", `${e.ranks} が全員の手札から消滅！`, 1400); break;
+    // カード交換（2戦目〜）。カードの中身は priv（当事者2人だけ）にある。当事者以外には「何枚・誰から誰へ」だけ
+    case "xtake": {   // 献上: 貧民側の強いカードが富豪側へ
+      sfx("xtake"); passFlyBacks(e.from,e.to,e.n);
+      const cs=e.priv&&e.priv.cards;
+      if(e.from===myId){ vib([60,40,100]); if(dopa()) kanji("献上","dark",undefined,.27); cutin("dark","💸 献上…",`${xTitle(e.to)}に ${cs?xcList(cs):e.n+"枚"} を取られた`,1300); }
+      else if(e.to===myId){ if(dopa()) kanji("献上","gold",undefined,.27); cutin("win","👑 献上！",`${xTitle(e.from)}から ${cs?xcList(cs):e.n+"枚"} が届いた`,1300); }
+      else if(!xMine()){ if(dopa()) kanji("献上","gold",undefined,.27); cutin("skip","💸 献上",`${xTitle(e.from)} → ${xTitle(e.to)}　${e.n}枚`,1000); }
+      else floatText(e.to,`💸+${e.n}`);
+      break; }
+    case "xgive": {   // 下賜: 富豪側が選んだカードを貧民側へ
+      sfx("xgive"); passFlyBacks(e.from,e.to,e.n);
+      const cs=e.priv&&e.priv.cards;
+      if(e.to===myId){ vib([30,30,60]); if(dopa()) kanji("下賜","gold",undefined,.27); cutin("seven","🎁 下賜",`${xTitle(e.from)}から ${cs?xcList(cs):e.n+"枚"} をもらった`,1300); }
+      else if(e.from===myId){ floatText(e.to,`🎁 下賜 ${e.n}枚`); }
+      else floatText(e.to,`🎁 下賜+${e.n}`);
+      break; }
     case "pending": if(S && ((S.pending && S.pending.pid===myId) || (S.u && S.u.pending && S.u.pending.pid===myId))){ sfx("turn"); vib(25); } break;
     case "join": sfx("chat"); if(e.who) toast(`${e.who} が入ってきた！`); break;
     case "round": sfx("deal"); cutin("round", e.game==="uno"?`🎴 UNO 第${e.n}回戦`:e.game==="baba"?`🤡 ババ抜き 第${e.n}回戦`:e.game==="shinkei"?`🧠 神経衰弱 第${e.n}回戦`:`第${e.n}ラウンド`, e.game==="shinkei"?"カードを並べたよ":"カードを配るよ", 1000); break;

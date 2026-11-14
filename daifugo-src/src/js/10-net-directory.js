@@ -191,15 +191,18 @@ let botKick=0;
 setInterval(()=>{   // CPUの手番なのに4秒以上動いていなければ再駆動
   if(!S || S.phase!=="play" || !isHost()) return;
   const cur=S.players.find(p=>p.id===S.turn);
-  if(cur && cur.bot && lastBotV===S.v && Date.now()-botKick>4000){ lastBotV=-1; driveBots(); }
+  if(cur && cur.bot && !xchgOn(S) && lastBotV===botVer(S) && Date.now()-botKick>4000){ lastBotV=-1; driveBots(); }
 },2000);
+// ベット（bv）は CPU の手を待たせない・やり直させないので、CPU 用の版番号からは引く
+const botVer = s => (s.v||0)-(s.bv||0);
 function driveBots(){
   if(!S || S.phase!=="play" || !isHost()) return;
+  driveCpuBets();
   const cur=S.players.find(p=>p.id===S.turn);
-  if(!cur || !cur.bot || lastBotV===S.v) return;
-  lastBotV=S.v; botKick=Date.now(); const v=S.v;
+  if(!cur || !cur.bot || lastBotV===botVer(S) || xchgOn(S)) return;       // カード交換中のCPUは、エンジンが渡し終えている（人間の選択待ちだけ）
+  lastBotV=botVer(S); botKick=Date.now(); const v=botVer(S);
   setTimeout(()=>{
-    if(!S || S.v!==v) return;
+    if(!S || botVer(S)!==v) return;
     if(mode==="solo"){ const s=clone(S); if(applyAction(s,myId,{t:"bot"})===true) setState(s); }
     else if(net==="db") mutateDb({t:"bot"}, myId);
     else hostApply(myId,{t:"bot"});

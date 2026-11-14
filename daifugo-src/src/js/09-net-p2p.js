@@ -15,7 +15,7 @@ const ICE_SERVERS = [
 // アプリのバージョンと通信プロトコル番号。PROTO はホストとクライアントで一致しないと入れない（PWAのキャッシュで古い版が混ざる対策）。
 // 通信の形（メッセージ名・状態の項目）を変えたら PROTO を1つ上げること。APP_VERSION は表示・不具合報告用。
 const APP_VERSION = "2026.11.14-sec1";
-const PROTO = 2;
+const PROTO = 4;
 // 「IPを隠す（リレー接続）」: オンにすると iceTransportPolicy:"relay" で、相手には中継サーバー（TURN）の住所だけが見える
 const relayOn = () => store.get("dfg_relay")==="1";
 function peerCfg(){ const cfg={iceServers:ICE_SERVERS}; if(relayOn()) cfg.iceTransportPolicy="relay"; return cfg; }
@@ -50,9 +50,10 @@ function backupPid(){ const p=S && S.players.find(x=>!x.bot && !x.offline && x.i
 // 公平モード：ゲーム中はバックアップ役にも手札を渡さない（ホストが落ちたらそのラウンドは中止してロビーへ）
 function lobbyBackup(s){
   const b=clone(s);
+  coinAbort(b);                                       // 開いている賭けは返金・回戦は数えない（コインは残る）
   Object.assign(b,{phase:"lobby", aborted:true, hands:{}, counts:{}, order:[], turn:null, field:null, passed:[], finished:[], losers:[], ranking:[], titles:{},
-    pending:null, pendingQ:[], after:null, u:null, b:null, k:null, rev:false, eb:false, lock:null, stair:false, lastPlayer:null});
-  b.players=b.players.filter(p=>!(p.bot && p.away)); b.players.forEach(p=>{ p.ready=false; delete p.wait; });
+    pending:null, pendingQ:[], after:null, xchg:null, u:null, b:null, k:null, rev:false, eb:false, lock:null, stair:false, lastPlayer:null});
+  b.players=b.players.filter(p=>!(p.bot && p.away)); b.players.forEach(p=>{ p.ready=false; delete p.wait; }); coinEnsure(b);
   b.log=["⚠ ホストが落ちたので、このラウンドは中止になった"]; b.fx={n:(s.fx&&s.fx.n)||0,k:[]};
   return b;
 }

@@ -63,7 +63,7 @@ function setState(s){ applyState(s); driveBots(); }
 // 新しい状態を反映。ゲーム中にチャットしか変わっていなければ、卓は描き直さない（選択やタップを邪魔しない）
 function applyState(ns){
   const old=S; S=ns;
-  if(old && screen==="room" && old.phase==="play" && ns.phase==="play" && old.gv===ns.gv && old.game===ns.game && document.querySelector(".table")){
+  if(old && screen==="room" && old.phase==="play" && ns.phase==="play" && old.gv===ns.gv && old.bv===ns.bv && old.game===ns.game && document.querySelector(".table")){
     collectChat(); updateChat(); refreshBubbles(); processThrows();
     const cb=document.getElementById("chatBtn"); if(cb) cb.innerHTML="💬"+(unread?`<span class="dot">${unread>9?"9+":unread}</span>`:"");
     return;

@@ -1,0 +1,141 @@
+/* ===== コイン・ベット・順位表・表彰式（常時アニメなし。動くのは一度きりの演出だけ） ===== */
+/* 席の残高: アバターの下端に重ねる（レイアウトを動かさない） */
+.avawrap .scoin{position:absolute;left:50%;bottom:-4px;transform:translateX(-50%);z-index:5;padding:0 6px 0 14px;border-radius:9px;font:900 10px/15px system-ui,sans-serif;color:#ffe066;background:linear-gradient(#3a2200,#1c0f00);border:1px solid #c99a2e;box-shadow:0 1px 3px rgba(0,0,0,.7);white-space:nowrap;pointer-events:none;letter-spacing:.02em}
+.avawrap .scoin::before{content:"";position:absolute;left:3px;top:2.5px;width:8px;height:8px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff6c0,#ffd23a 55%,#b07800);box-shadow:0 0 0 1px #6b4400}
+.seat.out .scoin{opacity:.9}
+body.wide .seat .scoin{font-size:10px}
+body.land .seat .scoin{font-size:9px;line-height:13px;padding:0 4px 0 11px;bottom:-5px}
+body.land .seat .scoin::before{width:6px;height:6px;top:2.5px;left:3px}
+.seat.xs .scoin{font-size:9px;line-height:13px;padding:0 4px 0 11px}
+.seat.xs .scoin::before{width:6px;height:6px;top:2.5px;left:3px}
+.mecoin{display:inline-block;margin-top:3px;font-size:11px;font-weight:900;color:#ffe066;white-space:nowrap}
+body.land .mecoin{margin-top:0;font-size:10px}
+.kchip .kc{font-size:9px;font-weight:900;color:#ffe066;white-space:nowrap}
+.sstat .cn{margin-left:6px;color:#ffe066;font-weight:900}
+
+/* ベットパネル（手札があった場所） */
+.betpanel{position:absolute;left:8px;right:8px;bottom:calc(var(--sab,0px) + 6px);z-index:4;box-sizing:border-box;padding:7px 8px 8px;border-radius:14px;background:linear-gradient(rgba(44,22,6,.96),rgba(18,8,2,.97));border:2px solid #c99a2e;box-shadow:0 0 0 1px #000,0 6px 16px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,240,170,.25)}
+.betpanel.placed{border-color:#7dffb0}
+.bphd{display:flex;align-items:center;gap:6px}
+.bphd>b{flex:1;font-family:var(--mincho);font-size:14px;color:#ffe9a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bpbal{font-size:13px;font-weight:900;color:#ffe066;background:rgba(0,0,0,.5);border:1px solid #c99a2e;border-radius:99px;padding:1px 10px;white-space:nowrap}
+.bpstakes{display:flex;align-items:center;gap:5px;margin-top:5px}
+.bpstakes .bpl{font-size:11px;font-weight:800;color:var(--muted)}
+.bpstakes button{padding:3px 0;width:46px;min-height:30px;font-size:14px;font-weight:900;border-radius:9px;background:linear-gradient(#3a2a12,#1b1206);color:#ffe9a8;border:1px solid rgba(255,210,58,.4);box-shadow:none}
+.bpstakes button.on{background:linear-gradient(#ffe08a,#f5b52e);color:#3a2600;border-color:#fff3a0;box-shadow:0 0 0 2px rgba(255,243,160,.6)}
+.bpstakes button:disabled{opacity:.35}
+.bpstakes .bpt{flex:1;font-size:10px;color:var(--muted);text-align:right;line-height:1.2}
+.bptiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(56px,1fr));gap:4px;margin-top:5px}
+.bt{display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 2px 3px;min-width:0;min-height:56px;border-radius:10px;background:linear-gradient(#34261a,#171009);color:#fff6dc;border:1px solid rgba(255,210,58,.4);box-shadow:none;font-weight:800}
+.bt .bta{display:block;line-height:0}
+.bt b{display:block;max-width:100%;font-size:10px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt small{font-size:10px;line-height:1.15;color:#d9c89a;white-space:nowrap}
+.bt small i{font-style:normal;font-size:12px;font-weight:900;color:#ffe066}
+.bt:not(:disabled):hover{background:linear-gradient(#4a3720,#241810)}
+.bt.on{background:linear-gradient(#1d5b34,#0f3320);border-color:#7dffb0;box-shadow:0 0 0 2px rgba(125,255,176,.55)}
+.bt:disabled:not(.on){opacity:.5}
+.bpconf{margin-top:5px;padding:5px 8px;border-radius:9px;background:rgba(40,140,70,.35);border:1px solid #5dffb0;font-size:13px;font-weight:800;line-height:1.35;color:#fff}
+.bpconf b{color:#ffe9a8}
+.bpconf small{display:block;font-size:11px;font-weight:700;color:#bfffd8}
+.bpnote{margin-top:5px;font-size:12px;font-weight:700;color:var(--muted);line-height:1.4}
+.bpnote .w,.bplast .w{color:#7dffb0;font-weight:900}.bpnote .l{color:#ff8a8a;font-weight:900}.bpnote .x{color:#9ad4ff;font-weight:900}
+.bpnote small{color:#d9c89a}
+.mebar.bmode .bb,.mebar.bmode #unsel{display:none}
+.mebar.bmode .hintrow{min-height:0}
+.floattxt.cft{font-size:14px;white-space:nowrap}
+.floattxt.cft.win{color:#ffe066;font-size:16px}.floattxt.cft.lose{color:#ff9a9a}.floattxt.cft.bet{color:#fff6c0}
+.cflyc{position:fixed;left:0;top:0;font-size:22px;z-index:19;pointer-events:none;will-change:transform,opacity}
+/* 横画面スマホ: 手札と同じ左下。右の列は操作（空）のまま */
+body.land .betpanel{left:calc(var(--sal,0px) + 8px);right:calc(var(--rc,196px) + var(--sar,0px) + 14px);bottom:calc(var(--sab,0px) + 6px);padding:4px 7px 5px}
+body.land .bphd>b{font-size:12px}
+body.land .bpbal{font-size:11px;padding:0 8px}
+body.land .bptiles{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(50px,1fr);margin-top:3px}
+body.land .bt{min-height:42px;padding:2px 1px}
+body.land .bt .bta .miniava{width:18px!important;height:18px!important}
+body.land .bt b{font-size:9px}body.land .bt small{font-size:9px}body.land .bt small i{font-size:10px}
+body.land .bpstakes{margin-top:3px}
+body.land .bpstakes button{min-height:26px;width:40px;font-size:12px;padding:0}
+body.land .bpstakes .bpt{display:none}
+body.land .bpconf{margin-top:3px;padding:2px 6px;font-size:11px}body.land .bpconf small{display:inline;margin-left:6px;font-size:10px}
+body.land .bpnote{margin-top:3px;font-size:11px}
+/* 横長PC */
+body.wide .betpanel{left:50%;right:auto;width:min(860px,92vw);transform:translateX(-50%);padding:10px 14px 12px;bottom:calc(var(--sab,0px) + 14px)}
+body.wide .bphd>b{font-size:17px}
+body.wide .bpbal{font-size:16px}
+body.wide .bptiles{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(72px,1fr);gap:8px;margin-top:8px}
+body.wide .bt{min-height:78px;padding:6px 3px}
+body.wide .bt b{font-size:12px}body.wide .bt small{font-size:12px}body.wide .bt small i{font-size:15px}
+body.wide .bpstakes{margin-top:8px}body.wide .bpstakes button{width:64px;min-height:36px;font-size:16px}
+body.wide .bpstakes .bpt{font-size:12px}
+body.wide .bpconf{font-size:16px}body.wide .bpnote{font-size:14px}
+/* 縦に低いスマホ（320x568 など）: 1行ずつ詰める */
+@media (max-height:640px){
+  body:not(.land):not(.wide) .betpanel{padding:5px 7px 6px;bottom:calc(var(--sab,0px) + 4px)}
+  body:not(.land):not(.wide) .bphd>b{font-size:13px}
+  body:not(.land):not(.wide) .bpstakes{margin-top:3px}
+  body:not(.land):not(.wide) .bpstakes button{min-height:26px}
+  body:not(.land):not(.wide) .bptiles{margin-top:3px;gap:3px;grid-template-columns:repeat(auto-fit,minmax(52px,1fr))}
+  body:not(.land):not(.wide) .bt{min-height:46px;padding:2px 1px}
+  body:not(.land):not(.wide) .bt .bta .miniava{width:18px!important;height:18px!important}
+  body:not(.land):not(.wide) .bt small{font-size:9px}body:not(.land):not(.wide) .bt small i{font-size:11px}
+}
+
+/* 順位表 */
+.standings .sthead{display:flex;gap:6px;font-size:10px;color:var(--muted);padding:2px 4px 0}
+.standings .sthead span:last-child{width:64px;text-align:right}
+.standings .sthead span:nth-last-child(2){width:64px;text-align:right}
+.standings .sthead span:first-child{width:26px}
+.slist{list-style:none;margin:2px 0 4px;padding:0}
+.srow{display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:8px;font-size:14px}
+.srow.me{background:rgba(255,210,58,.14);outline:1px solid rgba(255,210,58,.4)}
+.srow.wt{opacity:.75}
+.srow .sr{width:26px;flex:none;text-align:center;font-family:var(--mincho);font-weight:900;color:#ffe9a8}
+.srow .sr.r1{color:#ffe066;font-size:17px}
+.srow .sn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+.srow .sc{width:64px;text-align:right;font-weight:900;color:#ffe066;font-variant-numeric:tabular-nums}
+.srow .sd{width:64px;text-align:right;font-size:12px;font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums}
+.srow .sd.up,.cb .up,.cbt.up{color:#7dffb0}.srow .sd.dn,.cb .dn,.cbt.dn{color:#ff8a8a}
+.sfin{margin-top:4px;color:#ffe9a8}
+.cblist{list-style:none;margin:6px 0 0;padding:0}
+.cbrow{display:flex;align-items:baseline;gap:8px;padding:3px 4px;font-size:12px;flex-wrap:wrap}
+.cbrow.me{background:rgba(255,210,58,.14);border-radius:8px}
+.cbrow .sn{flex:1 0 90px;min-width:0;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cbrow i{font-style:normal;font-weight:900}
+.cbrow .cbt{min-width:64px;text-align:right;font-size:15px;font-weight:900;color:var(--muted)}
+.seapanel .note{margin-top:6px}
+
+/* 表彰式（全画面。#fx の下・シートの上） */
+.cer{position:fixed;inset:0;z-index:14;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;padding:calc(var(--sat,0px) + 12px) calc(var(--sar,0px) + 12px) calc(var(--sab,0px) + 12px) calc(var(--sal,0px) + 12px);background:radial-gradient(ellipse at 50% 30%,rgba(90,50,10,.96),rgba(10,4,0,.98));opacity:0;transition:opacity .35s ease;touch-action:manipulation;cursor:pointer}
+.cer.on{opacity:1}
+.cerhd{text-align:center;line-height:1.2}
+.cerhd b{display:block;font-family:var(--mincho);font-size:clamp(20px,5.2vh,34px);color:transparent;background:linear-gradient(180deg,#fffbe0,#ffe066 40%,#d99a00 60%,#fff2a8);-webkit-background-clip:text;background-clip:text;filter:drop-shadow(0 2px 0 rgba(0,0,0,.6))}
+.cerhd small{font-size:12px;color:var(--muted)}
+.cerlist{list-style:none;margin:0;padding:0;width:min(560px,100%);display:grid;grid-template-columns:1fr;gap:4px}
+.cr{display:flex;align-items:center;gap:8px;box-sizing:border-box;height:clamp(30px,calc((100vh - 150px)/var(--n)),50px);padding:0 10px;border-radius:12px;background:linear-gradient(rgba(60,36,10,.95),rgba(26,14,4,.95));border:1px solid rgba(255,210,58,.35);opacity:0;transform:translateX(-26px) scale(.96)}
+.cr.show{opacity:1;transform:none;transition:transform .38s cubic-bezier(.2,1.35,.4,1),opacity .22s ease-out}
+.cr .crr{width:30px;flex:none;text-align:center;font-family:var(--mincho);font-weight:900;font-size:17px;color:#ffe9a8}
+.cr .miniava{flex:none}
+.cr .crn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:clamp(13px,2.6vh,17px)}
+.cr .crc{font-weight:900;font-size:clamp(14px,3vh,19px);color:#ffe066;font-variant-numeric:tabular-nums}
+.cr.k1{background:linear-gradient(#7a5410,#3a2606);border-color:#fff3a0;box-shadow:0 0 0 2px rgba(255,243,160,.5)}
+.cr.k1 .crn{font-family:var(--mincho);font-size:clamp(15px,3.2vh,22px)}
+.cr.k2{border-color:#e6efff}.cr.k3{border-color:#e0a060}
+.cerhint{font-size:11px;color:var(--muted);opacity:.85}
+.cer.fin .cerhint{color:#ffe9a8}
+@media (max-height:520px) and (min-aspect-ratio:13/10){
+  .cerlist{grid-template-columns:1fr 1fr;grid-template-rows:repeat(var(--h),auto);grid-auto-flow:column;width:min(900px,100%)}
+  .cr{height:clamp(28px,calc((100vh - 110px)/var(--h)),44px)}
+  .cerhd b{font-size:20px}
+}
+.mebar.bmode .mecoin{display:none}
+@media (max-height:380px){
+  body.land .bt{min-height:34px}
+  body.land .bphd{min-height:0}
+  body.land .bpstakes,body.land .bptiles{margin-top:2px}
+}
+@media (max-height:380px){
+  body.land .betpanel{display:flex;flex-wrap:wrap;align-items:center;column-gap:8px}
+  body.land .bphd{flex:none;margin:0}
+  body.land .bpstakes{flex:1;min-width:0;margin-top:0;justify-content:flex-end}
+  body.land .bptiles,body.land .bpconf,body.land .bpnote{flex:0 0 100%}
+}

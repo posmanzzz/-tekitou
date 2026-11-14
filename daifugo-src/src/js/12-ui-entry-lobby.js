@@ -119,6 +119,7 @@ function bindChips(){
   const fr=document.getElementById("fairbtn"); if(fr) fr.onclick=()=>{ act({t:"fair",v:S.fair===false}); sfx("tap"); };
   const pb=document.getElementById("pubbtn"); if(pb) pb.onclick=()=>{ act({t:"pub",v:!S.pub}); sfx("tap"); setTimeout(()=>dirTick(true),50); };
   const rt=document.getElementById("rtitle"); if(rt && isHost()) rt.onchange=()=>{ act({t:"pub",v:true,title:rt.value}); setTimeout(()=>dirTick(true),50); };
+  app.querySelectorAll("[data-slen]").forEach(b=>b.onclick=()=>{ if(isHost() && S.phase!=="play"){ act({t:"season",len:+b.dataset.slen}); sfx("tap"); } });
   app.querySelectorAll("[data-tsec]").forEach(b=>b.onclick=()=>{ if(isHost()){ act({t:"timer",sec:+b.dataset.tsec}); sfx("tap"); } });
   app.querySelectorAll("[data-avchg]").forEach(b=>b.onclick=()=>pickAvatar());
 }
@@ -178,7 +179,7 @@ function startControls(isNext){
   const humans=S.players.filter(p=>!p.bot && p.id!==S.host);
   const readyN=humans.filter(p=>p.ready).length, allReady=readyN===humans.length;
   if(host){
-    const label = isNext ? "次のラウンドへ" : `ゲーム開始（${n}人）`;
+    const label = isNext ? (S.sea&&S.sea.fin ? "🆕 新シーズンを始める" : "次のラウンドへ") : `ゲーム開始（${n}人）`;
     return `<div class="btnrow"><button class="ghost" id="addbot" ${n>=MAX_PLAYERS?"disabled":""}>＋ CPU</button>
       <button id="start" ${n<2||!allReady?"disabled":""}>${allReady?label:`準備待ち ${readyN}/${humans.length}`}</button></div>
       ${!allReady&&n>=2?`<div style="text-align:right;margin-top:6px"><button class="small ghost" id="force">待たずに開始</button></div>`:""}`;
@@ -203,6 +204,8 @@ function renderLobby(){
     <div class="sub">合言葉 <span class="code">${esc(roomKey)}</span> ${inviteBtn()}</div>
     <div class="panel"><div class="note" style="margin-bottom:6px">${S.players.length}/${MAX_PLAYERS}人${readySummary()}</div>${playerChips()}${startControls(false)}</div>
     ${timerPanel()}
+    ${seasonPanel()}
+    ${standingsHtml()}
     ${gamePanel()}
     ${mode==="online"?chatPreview():""}
     ${rulesPanel()}
